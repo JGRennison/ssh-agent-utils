@@ -62,6 +62,54 @@ namespace SSHAgentUtils {
 		return htonl(*reinterpret_cast<const uint32_t*>(data));
 	}
 
+	uint32_t consume_rfc4251_u32(const unsigned char *&data, size_t &length, bool &ok) {
+		if(length >= 4) {
+			length -= 4;
+			data += 4;
+			return get_rfc4251_u32(data - 4);
+		}
+		else {
+			ok = false;
+			return 0;
+		}
+	}
+
+	// rvalue refs in case we don't want the lengths back
+	uint32_t consume_rfc4251_u32(const unsigned char *&&data, size_t &&length, bool &ok) {
+		return consume_rfc4251_u32(data, length, ok);
+	}
+
+	std::pair<const unsigned char *, const unsigned char *> consume_rfc4251_string_generic(const unsigned char *&data, size_t &length, bool &ok) {
+		uint32_t string_length = consume_rfc4251_u32(data, length, ok);
+		if(ok) {
+			if(length >= string_length) {
+				length -= string_length;
+				data += string_length;
+				return std::make_pair(data - string_length, data);
+			}
+		}
+		ok = false;
+		return std::make_pair(data, data);
+	}
+
+	std::string consume_rfc4251_string(const unsigned char *&data, size_t &length, bool &ok) {
+		auto pair = consume_rfc4251_string_generic(data, length, ok);
+		return std::string(pair.first, pair.second);
+	}
+
+	std::string consume_rfc4251_string(const unsigned char *&&data, size_t &&length, bool &ok) {
+		return consume_rfc4251_string(data, length, ok);
+	}
+
+	std::vector<unsigned char> consume_rfc4251_string_v(const unsigned char *&data, size_t &length, bool &ok) {
+		auto pair = consume_rfc4251_string_generic(data, length, ok);
+		return std::vector<unsigned char>(pair.first, pair.second);
+	}
+
+	std::vector<unsigned char> consume_rfc4251_string_v(const unsigned char *&&data, size_t &&length, bool &ok) {
+		return consume_rfc4251_string_v(data, length, ok);
+	}
+
 	// returns true if valid, or if 0 length
 	bool validate_rfc4251_string_sequence(const unsigned char *data, size_t length) {
 		if(!length) return true;
@@ -77,6 +125,18 @@ namespace SSHAgentUtils {
 			length -= stringlength;
 		}
 		return true;
+	}
+
+	void serialise_rfc4251_u32(std::vector<unsigned char> &out, uint32_t value) {
+		out.push_back((value >> 24) & 0xFF);
+		out.push_back((value >> 16) & 0xFF);
+		out.push_back((value >> 8) & 0xFF);
+		out.push_back((value >> 0) & 0xFF);
+	}
+
+	void serialise_rfc4251_string(std::vector<unsigned char> &out, const unsigned char *start, size_t length) {
+		serialise_rfc4251_u32(out, length);
+		out.insert(out.end(), start, start + length);
 	}
 
 	std::string get_env_agent_sock_name() {
@@ -494,19 +554,59 @@ namespace SSHAgentUtils {
 		int output = b64d.decode(b64_data.data(), b64_data.size(), (char *) key.data.data());
 		key.data.resize(output);
 
-		if(key.data.size() <= 4) return bad_key();
-
-		// Basic sanity check, see if name field matches
-		uint32_t name_length = get_rfc4251_u32(key.data.data());
-		if(name_length != key.type.size()) return bad_key();
-		if(memcmp(key.data.data() + 4, key.type.data(), name_length) != 0) return bad_key();
-
 		// Validate that it looks sensible
 		if(!validate_rfc4251_string_sequence(key.data.data(), key.data.size())) return bad_key();
+
+		// Check if type field matches
+		bool ok = true;
+		std::string type = consume_rfc4251_string(key.data.data(), key.data.size(), ok);
+		if(!ok || type != key.type) return bad_key();
 
 		// Hooray, key looks valid
 
 		return good_key();
 	}
 
+	bool identities_answer::parse(const unsigned char *d, size_t l) {
+		if(l < 5) return false;
+		if(d[0] != SSH2_AGENT_IDENTITIES_ANSWER) return false;
+		d++;
+		l--;
+
+		bool ok = true;
+		size_t count = consume_rfc4251_u32(d, l, ok);
+
+		if(!ok) return false;
+
+		// don't reserve based on count, check that keys actually exist first
+
+		for(size_t i = 0; i < count && ok; i++) {
+			keys.emplace_back();
+			identity &k = keys.back();
+
+			k.pubkey = consume_rfc4251_string_v(d, l, ok);
+			k.comment = consume_rfc4251_string(d, l, ok);
+		}
+		if(l) ok = false;
+
+#ifdef DEBUG
+		if(ok) {
+			fprintf(stderr, "SSH2_AGENT_IDENTITIES_ANSWER: found %u keys\n", (unsigned int) count);
+			for(auto &k : keys) {
+				fprintf(stderr, "Key of length %u, comment: %s\n", (unsigned int) k.pubkey.size(), k.comment.c_str());
+			}
+		}
+#endif
+
+		return ok;
+	}
+
+	void identities_answer::serialise(std::vector<unsigned char> &out) {
+		out.push_back(SSH2_AGENT_IDENTITIES_ANSWER);
+		serialise_rfc4251_u32(out, keys.size());
+		for(auto &k : keys) {
+			serialise_rfc4251_string(out, k.pubkey.data(), k.pubkey.size());
+			serialise_rfc4251_string(out, (const unsigned char*) k.comment.data(), k.comment.size());
+		}
+	}
 }

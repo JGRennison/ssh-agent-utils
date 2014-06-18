@@ -88,6 +88,21 @@ namespace SSHAgentUtils {
 
 	bool load_pubkey_file(const std::string &filename, pubkey &key);
 
+	enum {
+		SSH2_AGENT_IDENTITIES_ANSWER = 12,
+	};
+
+	struct identities_answer {
+		struct identity {
+			std::vector<unsigned char> pubkey;
+			std::string comment;
+		};
+		std::vector<identity> keys;
+
+		bool parse(const unsigned char *d, size_t l);
+		void serialise(std::vector<unsigned char> &out);
+	};
+
 };
 
 #endif

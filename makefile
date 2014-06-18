@@ -18,7 +18,7 @@ endif
 .PHONY: install all
 .SECONDARY:
 
-all: $(BIN)/ssh-agent-passthrough
+all: $(BIN)/ssh-agent-passthrough $(BIN)/ssh-agent-on-demand
 
 $(BIN)/%: $(OBJ)/%.o $(OBJ)/ssh-agent-utils.o | $(BIN)
 	$(CXX) -o $@ $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) $< $(OBJ)/ssh-agent-utils.o $(LOADLIBES) $(LDLIBS)
