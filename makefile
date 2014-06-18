@@ -5,6 +5,7 @@ CXXFLAGS ?= -Wall -Wextra -Wno-unused-parameter --std=c++11 -O3 -g
 LDFLAGS ?= -g
 CPPFLAGS += -D_FILE_OFFSET_BITS=64
 CXXFLAGS += -std=c++11
+LDLIBS = -lb64
 
 .PHONY: install all
 .SECONDARY:

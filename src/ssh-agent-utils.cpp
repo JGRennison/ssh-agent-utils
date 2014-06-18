@@ -25,7 +25,12 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <arpa/inet.h>
+
+#include <b64/decode.h>
+
+#include <cstring>
 
 #include "ssh-agent-utils.h"
 
@@ -51,6 +56,27 @@ namespace SSHAgentUtils {
 #endif
 			exit(EXIT_FAILURE);
 		}
+	}
+
+	uint32_t get_rfc4251_u32(const unsigned char *data) {
+		return htonl(*reinterpret_cast<const uint32_t*>(data));
+	}
+
+	// returns true if valid, or if 0 length
+	bool validate_rfc4251_string_sequence(const unsigned char *data, size_t length) {
+		if(!length) return true;
+		if(!data) return false;
+
+		while(length) {
+			if(length < 4) return false;
+			size_t stringlength = get_rfc4251_u32(data);
+			data += 4;
+			length -= 4;
+			if(length < stringlength) return false;
+			data += stringlength;
+			length -= stringlength;
+		}
+		return true;
 	}
 
 	std::string get_env_agent_sock_name() {
@@ -381,7 +407,7 @@ namespace SSHAgentUtils {
 				insize = info.in_buffer.size();
 
 				if(insize >= 4) {
-					size_t length = htonl(*reinterpret_cast<uint32_t*>(info.in_buffer.data()));
+					size_t length = get_rfc4251_u32(info.in_buffer.data());
 					if(insize >= length + 4) {
 						process_message(fd, info.in_buffer.data() + 4, length);
 						info.in_buffer.erase(info.in_buffer.begin(), info.in_buffer.begin() + length + 4);
@@ -409,6 +435,78 @@ namespace SSHAgentUtils {
 		sigaction(SIGTERM, &new_action, 0);
 		new_action.sa_handler = SIG_IGN;
 		sigaction(SIGPIPE, &new_action, 0);
+	}
+
+	// Note that loading a public key is blocking
+	// Returns true on success
+	bool load_pubkey_file(const std::string &filename, pubkey &key) {
+		int fd = open(filename.c_str(), O_RDONLY);
+
+		auto bad_key = [&]() -> bool {
+			// reset the key
+			key.~pubkey();
+			new (&key) pubkey();
+			if(fd != -1) close(fd);
+			return false;
+		};
+
+		auto good_key = [&]() -> bool {
+			if(fd != -1) close(fd);
+			return true;
+		};
+
+		struct stat s;
+		int stat_result = fstat(fd, &s);
+		if(stat_result < 0) return bad_key();
+
+		if(key.modified != 0) {
+			//we have this key already, don't bother loading it again unless it's new
+
+			if(s.st_mtime == key.modified) {
+				// Key has same time, don't reparse
+				return good_key();
+			}
+		}
+
+		key.modified = s.st_mtime;
+
+		std::vector<char> filedata;
+		filedata.resize(s.st_size + 1);                             // +1 for null-terminator
+		int read_result = read(fd, filedata.data(), s.st_size + 1); // read one-larger
+		if(read_result != s.st_size) return bad_key();              // read failed, or size not as expected
+
+		// filedata is now null-terminated
+
+		char *token = std::strtok(filedata.data(), " ");
+		if(token) key.type = token;
+		else return bad_key();
+
+		std::string b64_data;
+		token = std::strtok(nullptr, " ");
+		if(token) b64_data = token;
+		else return bad_key();
+
+		token = std::strtok(NULL,"\n");
+		if(token) key.comment = token;
+
+		key.data.resize(b64_data.size()); // over-estimate size
+		base64::decoder b64d;
+		int output = b64d.decode(b64_data.data(), b64_data.size(), (char *) key.data.data());
+		key.data.resize(output);
+
+		if(key.data.size() <= 4) return bad_key();
+
+		// Basic sanity check, see if name field matches
+		uint32_t name_length = get_rfc4251_u32(key.data.data());
+		if(name_length != key.type.size()) return bad_key();
+		if(memcmp(key.data.data() + 4, key.type.data(), name_length) != 0) return bad_key();
+
+		// Validate that it looks sensible
+		if(!validate_rfc4251_string_sequence(key.data.data(), key.data.size())) return bad_key();
+
+		// Hooray, key looks valid
+
+		return good_key();
 	}
 
 }

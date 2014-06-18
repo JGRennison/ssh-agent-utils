@@ -78,6 +78,16 @@ namespace SSHAgentUtils {
 		std::function<void(sau_state &, FDTYPE, int, int, const unsigned char *, size_t)> msg_handler;
 	};
 
+
+	struct pubkey {
+		std::string type;
+		std::vector<unsigned char> data;
+		std::string comment;
+		time_t modified = 0;
+	};
+
+	bool load_pubkey_file(const std::string &filename, pubkey &key);
+
 };
 
 #endif
