@@ -14,7 +14,7 @@ all: $(BIN)/ssh-agent-passthrough
 $(BIN)/%: $(OBJ)/%.o $(OBJ)/ssh-agent-utils.o | $(BIN)
 	$(CXX) -o $@ $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) $< $(OBJ)/ssh-agent-utils.o $(LOADLIBES) $(LDLIBS)
 
-$(OBJ)/%.o: %.cpp ssh-agent-utils.h
+$(OBJ)/%.o: src/%.cpp src/ssh-agent-utils.h | $(OBJ)
 	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) $< -o $@
 
 $(BIN):
