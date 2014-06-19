@@ -28,6 +28,8 @@ struct on_demand_key {
 	std::string filename;
 	pubkey key;
 
+	std::vector<int> client_fds;        // List of client fds we have sent an on-demand key to
+
 	on_demand_key(std::string f) : filename(f) { }
 };
 
@@ -89,7 +91,7 @@ int main(int argc, char **argv) {
 	sau_state s(agent_env, sock_path);
 
 	s.set_signal_handlers();
-	s.make_listen_sock();
+
 	s.msg_handler = [](sau_state &ss, FDTYPE type, int this_fd, int other_fd, const unsigned char *d, size_t l) {
 		if(type == FDTYPE::AGENT && l > 0 && d[0] == SSH2_AGENT_IDENTITIES_ANSWER) {
 			// The agent is supplying a list of identities, possibly add our own here
@@ -101,6 +103,9 @@ int main(int argc, char **argv) {
 			}
 
 			for(auto &k : on_demand_keys) {
+				// If this client fd is already listed, remove it
+				k.client_fds.erase(std::remove(k.client_fds.begin(), k.client_fds.end(), other_fd), k.client_fds.end());
+
 				if(load_pubkey_file(k.filename, k.key)) {
 					auto it = std::find_if(ans.keys.begin(), ans.keys.end(), [&](const identities_answer::identity &id) {
 						return id.pubkey.size() == k.key.data.size() && std::equal(id.pubkey.begin(), id.pubkey.end(), k.key.data.begin());
@@ -111,6 +116,9 @@ int main(int argc, char **argv) {
 						identities_answer::identity &id = ans.keys.back();
 						id.pubkey = k.key.data;
 						id.comment = k.filename + " (" + k.key.comment + ") [On Demand]";
+
+						// Add this client fd to list
+						k.client_fds.push_back(other_fd);
 #ifdef DEBUG
 						fprintf(stderr, "Adding on-demand key of length: %u, comment: %s\n", (unsigned int) id.pubkey.size(), id.comment.c_str());
 #endif
@@ -123,6 +131,13 @@ int main(int argc, char **argv) {
 		}
 		else {
 			ss.write_message(other_fd, d, l);
+		}
+	};
+
+	s.closed_connection_notification = [](sau_state &ss, int agent_fd, int client_fd) {
+		for(auto &k : on_demand_keys) {
+			// If this client fd is listed, remove it
+			k.client_fds.erase(std::remove(k.client_fds.begin(), k.client_fds.end(), client_fd), k.client_fds.end());
 		}
 	};
 	s.poll_loop();

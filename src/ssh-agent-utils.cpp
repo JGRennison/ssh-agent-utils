@@ -197,8 +197,7 @@ namespace SSHAgentUtils {
 		pollfds.pop_back();
 
 		// Restore to initial state
-		fdinfos[fd].~fdinfo();
-		new (&fdinfos[fd]) fdinfo();
+		fdinfos[fd] = fdinfo();
 	}
 
 	void sau_state::setpollfdevents(int fd, short events) {
@@ -314,6 +313,8 @@ namespace SSHAgentUtils {
 	}
 
 	void sau_state::poll_loop() {
+		make_listen_sock();
+
 		while(true) {
 			sigset_t mask;
 			sigemptyset(&mask);
@@ -366,6 +367,10 @@ namespace SSHAgentUtils {
 						addpollfd(newsock, POLLIN | POLLERR, FDTYPE::CLIENT);
 						fdinfos[newsock].other_fd = agent_sock;
 						fdinfos[agent_sock].other_fd = newsock;
+
+						if(new_connection_notification) {
+							new_connection_notification(*this, agent_sock, newsock);
+						}
 						break;
 					}
 					case FDTYPE::AGENT:
@@ -382,6 +387,13 @@ namespace SSHAgentUtils {
 	void sau_state::handle_fd(int fd, short revents, bool &continue_flag) {
 		fdinfo &info = fdinfos[fd];
 		auto kill_fd = [&]() {
+			if(closed_connection_notification) {
+				int agent_fd = fd;
+				int client_fd = info.other_fd;
+				if(info.type == FDTYPE::CLIENT) std::swap(agent_fd, client_fd);
+				closed_connection_notification(*this, agent_fd, client_fd);
+			}
+
 #ifdef DEBUG
 			fprintf(stderr, "handle_fd: killing fd: %d\n", fd);
 #endif

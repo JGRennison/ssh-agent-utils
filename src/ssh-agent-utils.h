@@ -75,7 +75,9 @@ namespace SSHAgentUtils {
 		void set_signal_handlers();
 
 		// Caller should set this
-		std::function<void(sau_state &, FDTYPE, int, int, const unsigned char *, size_t)> msg_handler;
+		std::function<void(sau_state &, FDTYPE, int, int, const unsigned char *, size_t)> msg_handler;   // src fd, other fd
+		std::function<void(sau_state &, int, int)> new_connection_notification;    // agent fd, client fd
+		std::function<void(sau_state &, int, int)> closed_connection_notification; // agent fd, client fd
 	};
 
 
