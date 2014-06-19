@@ -18,6 +18,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <getopt.h>
 #include <fcntl.h>
@@ -160,7 +161,6 @@ namespace SSHAgentUtils {
 			: agent_sock_name(std::move(agent)), our_sock_name(std::move(our)) { }
 
 	sau_state::~sau_state() {
-		unlink(our_sock_name.c_str());
 	}
 
 	void sau_state::addpollfd(int fd, short events, FDTYPE type) {
@@ -375,6 +375,8 @@ namespace SSHAgentUtils {
 				}
 			}
 		}
+
+		unlink(our_sock_name.c_str());
 	}
 
 	void sau_state::handle_fd(int fd, short revents, bool &continue_flag) {
@@ -593,7 +595,7 @@ namespace SSHAgentUtils {
 		if(ok) {
 			fprintf(stderr, "SSH2_AGENT_IDENTITIES_ANSWER: found %u keys\n", (unsigned int) count);
 			for(auto &k : keys) {
-				fprintf(stderr, "Key of length %u, comment: %s\n", (unsigned int) k.pubkey.size(), k.comment.c_str());
+				fprintf(stderr, "Key of length: %u, comment: %s\n", (unsigned int) k.pubkey.size(), k.comment.c_str());
 			}
 		}
 #endif
@@ -608,5 +610,28 @@ namespace SSHAgentUtils {
 			serialise_rfc4251_string(out, k.pubkey.data(), k.pubkey.size());
 			serialise_rfc4251_string(out, (const unsigned char*) k.comment.data(), k.comment.size());
 		}
+	}
+
+	// This function is from http://stackoverflow.com/a/8098080
+	// Author: Erik Aronesty, CC by-sa
+	std::string string_format(const std::string &fmt, ...) {
+		int size = 100;
+		std::string str;
+		va_list ap;
+		while (1) {
+			str.resize(size);
+			va_start(ap, fmt);
+			int n = vsnprintf((char *)str.c_str(), size, fmt.c_str(), ap);
+			va_end(ap);
+			if (n > -1 && n < size) {
+				str.resize(n);
+				return str;
+			}
+			if (n > -1)
+				size = n + 1;
+			else
+				size *= 2;
+		}
+		return str;
 	}
 }

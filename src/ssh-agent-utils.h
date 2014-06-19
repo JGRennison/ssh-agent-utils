@@ -103,6 +103,7 @@ namespace SSHAgentUtils {
 		void serialise(std::vector<unsigned char> &out);
 	};
 
+	std::string string_format(const std::string &fmt, ...);
 };
 
 #endif

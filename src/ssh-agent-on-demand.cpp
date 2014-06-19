@@ -16,6 +16,8 @@
 //  2014 - Jonathan G Rennison <j.g.rennison@gmail.com>
 //==========================================================================
 
+#include <getopt.h>
+
 #include <algorithm>
 
 #include "ssh-agent-utils.h"
@@ -31,8 +33,60 @@ struct on_demand_key {
 
 std::vector<on_demand_key> on_demand_keys;
 
+static struct option options[] = {
+	{ "help",          no_argument,        NULL, 'h' },
+	{ "socket-path",   required_argument,  NULL, 's' },
+	{ NULL, 0, 0, 0 }
+};
+
+std::string sock_path;
+std::string tempdir;
+
+void show_usage() {
+	fprintf(stderr,
+			"Usage: ssh-agent-on-demand [options] pubkeyfiles ...\n"
+			"\tAn SSH agent proxy which adds public keys to identity lists.\n"
+			"\tIf such a public key is requested, the corresponding private key\n"
+			"\tis added on-demand using ssh-add.\n"
+			"Options:\n"
+			"-h, --help\n"
+			"\tShow this help\n"
+			"-s, --socket-path PATH\n"
+			"\tCreate the listener socket at PATH\n"
+			"\tDefaults to a path of the form /tmp/sshod-XXXXXX/agentod.pid\n"
+	);
+}
+
 int main(int argc, char **argv) {
-	sau_state s(get_env_agent_sock_name_or_die(), "ssh-agent-on-demand-sock");
+	int n = 0;
+	while (n >= 0) {
+		n = getopt_long(argc, argv, "hs:", options, NULL);
+		if (n < 0) continue;
+		switch (n) {
+		case 's':
+			sock_path = optarg;
+			break;
+		case '?':
+		case 'h':
+			show_usage();
+			exit(1);
+		}
+	}
+
+	while(optind < argc) {
+		on_demand_keys.emplace_back(argv[optind++]);
+	}
+
+	std::string agent_env = get_env_agent_sock_name_or_die();
+
+	if(sock_path.empty()) {
+		char tmp[] = "/tmp/sshod-XXXXXX";
+		if(!mkdtemp(tmp)) exit(EXIT_FAILURE);
+		tempdir = tmp;
+		sock_path = string_format("%s/agentod.%d", tmp, (int) getpid());
+	}
+
+	sau_state s(agent_env, sock_path);
 
 	s.set_signal_handlers();
 	s.make_listen_sock();
@@ -57,6 +111,9 @@ int main(int argc, char **argv) {
 						identities_answer::identity &id = ans.keys.back();
 						id.pubkey = k.key.data;
 						id.comment = k.filename + " (" + k.key.comment + ") [On Demand]";
+#ifdef DEBUG
+						fprintf(stderr, "Adding on-demand key of length: %u, comment: %s\n", (unsigned int) id.pubkey.size(), id.comment.c_str());
+#endif
 					}
 				}
 			}
@@ -69,6 +126,10 @@ int main(int argc, char **argv) {
 		}
 	};
 	s.poll_loop();
+
+	if(!tempdir.empty()) {
+		rmdir(tempdir.c_str());
+	}
 
 	return 0;
 }
