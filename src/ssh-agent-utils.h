@@ -50,6 +50,7 @@ namespace SSHAgentUtils {
 			bool waiting_for_connect = false;
 			std::vector<unsigned char> in_buffer;
 			int other_fd = -1;
+			bool output_blocked = false;
 		};
 
 		std::vector<struct pollfd> pollfds;
@@ -69,6 +70,7 @@ namespace SSHAgentUtils {
 		int make_agent_sock();
 		void write_message(int fd, const unsigned char *d, size_t l);
 		void process_message(int fd, unsigned char *data, size_t length);
+		void set_output_block_state(int fd, bool blocked);
 		void set_connection_poll_events(int fd);
 		void poll_loop();
 		void handle_fd(int fd, short revents, bool &continue_flag);

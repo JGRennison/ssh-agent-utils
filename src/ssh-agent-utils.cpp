@@ -278,13 +278,18 @@ namespace SSHAgentUtils {
 		}
 	}
 
+	void sau_state::set_output_block_state(int fd, bool blocked) {
+		fdinfos[fd].output_blocked = blocked;
+		set_connection_poll_events(fd);
+	}
+
 	void sau_state::set_connection_poll_events(int fd) {
 		fdinfo &info = fdinfos[fd];
 		short events = POLLERR;
 		if(info.waiting_for_connect) events |= POLLOUT;
 		else {
 			events |= POLLIN;
-			if(!info.out_buffers.empty()) events |= POLLOUT;
+			if(!info.output_blocked && !info.out_buffers.empty()) events |= POLLOUT;
 		}
 		setpollfdevents(fd, events);
 	}
