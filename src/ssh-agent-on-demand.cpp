@@ -138,7 +138,9 @@ int main(int argc, char **argv) {
 
 	sau_state s(agent_env, sock_path);
 
-	fprintf(stdout, "%s\n", sock_path.c_str());
+	if(!unslurp_file(STDOUT_FILENO, sock_path)) {
+		exit(EXIT_FAILURE);
+	}
 
 	s.set_signal_handlers();
 

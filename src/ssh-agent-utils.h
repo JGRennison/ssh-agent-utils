@@ -120,6 +120,17 @@ namespace SSHAgentUtils {
 		bool parse(const unsigned char *d, size_t l);
 	};
 
+	bool slurp_file(int fd, std::vector<unsigned char> &output, size_t read_hint = 0);
+	bool unslurp_file(int fd, const unsigned char *data, size_t size);
+
+	inline bool unslurp_file(int fd, const std::vector<unsigned char> &buffer) {
+		return unslurp_file(fd, buffer.data(), buffer.size());
+	}
+
+	inline bool unslurp_file(int fd, const std::string &buffer) {
+		return unslurp_file(fd, (unsigned char *) buffer.data(), buffer.size());
+	}
+
 	std::string string_format(const std::string &fmt, ...);
 };
 

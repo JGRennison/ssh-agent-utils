@@ -717,6 +717,39 @@ namespace SSHAgentUtils {
 		return ok;
 	}
 
+	bool slurp_file(int fd, std::vector<unsigned char> &output, size_t read_hint) {
+		output.resize(0);
+		size_t real_size = 0;
+
+		if(!read_hint) read_hint = read_size;
+		while(true) {
+			output.resize(real_size + read_hint);
+			ssize_t result = read(fd, output.data() + real_size, read_hint);
+			if(result < 0) {
+				output.resize(real_size);
+				return false;
+			}
+			else if(result == 0) {
+				output.resize(real_size);
+				return true;
+			}
+			else {
+				real_size += result;
+				read_hint = read_size;
+			}
+		}
+	}
+
+	bool unslurp_file(int fd, const unsigned char *data, size_t size) {
+		while(size) {
+			ssize_t wrote = write(fd, data, size);
+			if(wrote <= 0) return false;
+			data += wrote;
+			size -= wrote;
+		}
+		return true;
+	}
+
 	// This function is from http://stackoverflow.com/a/8098080
 	// Author: Erik Aronesty, CC by-sa
 	std::string string_format(const std::string &fmt, ...) {
