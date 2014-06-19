@@ -82,26 +82,29 @@ namespace SSHAgentUtils {
 		std::function<void(sau_state &, int, int)> closed_connection_notification; // agent fd, client fd
 	};
 
-
-	struct pubkey {
-		std::string type;
+	struct keydata {
 		std::vector<unsigned char> data;
 		std::string comment;
+
+		bool operator==(const keydata &other) const;
+		bool operator!=(const keydata &other) const {
+			return !(*this == other);
+		}
+	};
+
+	struct pubkey_file : public keydata {
+		std::string type;
 		time_t modified = 0;
 	};
 
-	bool load_pubkey_file(const std::string &filename, pubkey &key);
+	bool load_pubkey_file(const std::string &filename, pubkey_file &key);
 
 	enum {
 		SSH2_AGENT_IDENTITIES_ANSWER = 12,
 	};
 
 	struct identities_answer {
-		struct identity {
-			std::vector<unsigned char> pubkey;
-			std::string comment;
-		};
-		std::vector<identity> keys;
+		std::vector<keydata> keys;
 
 		bool parse(const unsigned char *d, size_t l);
 		void serialise(std::vector<unsigned char> &out);

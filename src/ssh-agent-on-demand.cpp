@@ -26,8 +26,7 @@ using namespace SSHAgentUtils;
 
 struct on_demand_key {
 	std::string filename;
-	pubkey key;
-
+	pubkey_file key;
 	std::vector<int> client_fds;        // List of client fds we have sent an on-demand key to
 
 	on_demand_key(std::string f) : filename(f) { }
@@ -107,20 +106,20 @@ int main(int argc, char **argv) {
 				k.client_fds.erase(std::remove(k.client_fds.begin(), k.client_fds.end(), other_fd), k.client_fds.end());
 
 				if(load_pubkey_file(k.filename, k.key)) {
-					auto it = std::find_if(ans.keys.begin(), ans.keys.end(), [&](const identities_answer::identity &id) {
-						return id.pubkey.size() == k.key.data.size() && std::equal(id.pubkey.begin(), id.pubkey.end(), k.key.data.begin());
+					auto it = std::find_if(ans.keys.begin(), ans.keys.end(), [&](const keydata &id) {
+						return id == k.key;
 					});
 					if(it == ans.keys.end()) {
 						// no such key, add it now
 						ans.keys.emplace_back();
-						identities_answer::identity &id = ans.keys.back();
-						id.pubkey = k.key.data;
+						keydata &id = ans.keys.back();
+						id.data = k.key.data;
 						id.comment = k.filename + " (" + k.key.comment + ") [On Demand]";
 
 						// Add this client fd to list
 						k.client_fds.push_back(other_fd);
 #ifdef DEBUG
-						fprintf(stderr, "Adding on-demand key of length: %u, comment: %s\n", (unsigned int) id.pubkey.size(), id.comment.c_str());
+						fprintf(stderr, "Adding on-demand key of length: %u, comment: %s\n", (unsigned int) id.data.size(), id.comment.c_str());
 #endif
 					}
 				}

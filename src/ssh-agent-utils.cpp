@@ -32,6 +32,7 @@
 #include <b64/decode.h>
 
 #include <cstring>
+#include <algorithm>
 
 #include "ssh-agent-utils.h"
 
@@ -516,15 +517,18 @@ namespace SSHAgentUtils {
 		sigaction(SIGPIPE, &new_action, 0);
 	}
 
+	bool keydata::operator==(const keydata &other) const {
+		return data.size() == other.data.size() && std::equal(data.begin(), data.end(), other.data.begin());
+	}
+
 	// Note that loading a public key is blocking
 	// Returns true on success
-	bool load_pubkey_file(const std::string &filename, pubkey &key) {
+	bool load_pubkey_file(const std::string &filename, pubkey_file &key) {
 		int fd = open(filename.c_str(), O_RDONLY);
 
 		auto bad_key = [&]() -> bool {
 			// reset the key
-			key.~pubkey();
-			new (&key) pubkey();
+			key = pubkey_file();
 			if(fd != -1) close(fd);
 			return false;
 		};
@@ -601,9 +605,9 @@ namespace SSHAgentUtils {
 
 		for(size_t i = 0; i < count && ok; i++) {
 			keys.emplace_back();
-			identity &k = keys.back();
+			keydata &k = keys.back();
 
-			k.pubkey = consume_rfc4251_string_v(d, l, ok);
+			k.data = consume_rfc4251_string_v(d, l, ok);
 			k.comment = consume_rfc4251_string(d, l, ok);
 		}
 		if(l) ok = false;
@@ -612,7 +616,7 @@ namespace SSHAgentUtils {
 		if(ok) {
 			fprintf(stderr, "SSH2_AGENT_IDENTITIES_ANSWER: found %u keys\n", (unsigned int) count);
 			for(auto &k : keys) {
-				fprintf(stderr, "Key of length: %u, comment: %s\n", (unsigned int) k.pubkey.size(), k.comment.c_str());
+				fprintf(stderr, "Key of length: %u, comment: %s\n", (unsigned int) k.data.size(), k.comment.c_str());
 			}
 		}
 #endif
@@ -624,7 +628,7 @@ namespace SSHAgentUtils {
 		out.push_back(SSH2_AGENT_IDENTITIES_ANSWER);
 		serialise_rfc4251_u32(out, keys.size());
 		for(auto &k : keys) {
-			serialise_rfc4251_string(out, k.pubkey.data(), k.pubkey.size());
+			serialise_rfc4251_string(out, k.data.data(), k.data.size());
 			serialise_rfc4251_string(out, (const unsigned char*) k.comment.data(), k.comment.size());
 		}
 	}
