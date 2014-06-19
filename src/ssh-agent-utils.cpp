@@ -265,6 +265,8 @@ namespace SSHAgentUtils {
 			exit(EXIT_FAILURE);
 		};
 
+		mode_t oldmask = umask(0177);
+
 		int sock = socket(AF_UNIX, SOCK_STREAM, 0);
 		if(sock == -1) {
 			fail();
@@ -285,6 +287,8 @@ namespace SSHAgentUtils {
 		if(listen(sock, 64) == -1) {
 			fail();
 		}
+
+		umask(oldmask);
 
 		setnonblock(sock);
 		addpollfd(sock, POLLIN | POLLERR, FDTYPE::LISTENER);
