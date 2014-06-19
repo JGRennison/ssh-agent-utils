@@ -60,9 +60,13 @@ struct ssh_add_operation {
 
 std::vector<ssh_add_operation> ssh_add_ops;
 
+void single_instance_check(const std::string &agent_env);
+void cleanup();
+
 static struct option options[] = {
-	{ "help",          no_argument,        NULL, 'h' },
-	{ "socket-path",   required_argument,  NULL, 's' },
+	{ "help",            no_argument,        NULL, 'h' },
+	{ "socket-path",     required_argument,  NULL, 's' },
+	{ "single-instance", required_argument,  NULL, '1' },
 	{ NULL, 0, 0, 0 }
 };
 
@@ -89,6 +93,9 @@ void show_usage() {
 			"General Options:\n"
 			"-h, --help\n"
 			"\tShow this help\n"
+			"-1, --single-instance\n"
+			"\tIf another instance which also used this switch is proxying the *same*\n"
+			"\tagent socket, print the path to its socket and exit.\n"
 			"-s, --socket-path PATH\n"
 			"\tCreate the listener socket at PATH\n"
 			"\tDefaults to a path of the form /tmp/sshod-XXXXXX/agentod.pid\n"
@@ -96,13 +103,18 @@ void show_usage() {
 }
 
 int main(int argc, char **argv) {
+	bool single_instance = false;
+
 	int n = 0;
 	while (n >= 0) {
-		n = getopt_long(argc, argv, "-s:ct:h", options, NULL);
+		n = getopt_long(argc, argv, "-s:1ct:h", options, NULL);
 		if (n < 0) continue;
 		switch (n) {
 		case 's':
 			sock_path = optarg;
+			break;
+		case '1':
+			single_instance = true;
 			break;
 		case 'c':
 			get_current_options().args.push_back("-c");
@@ -136,9 +148,14 @@ int main(int argc, char **argv) {
 		sock_path = string_format("%s/agentod.%d", tmp, (int) getpid());
 	}
 
+	if(single_instance) {
+		single_instance_check(agent_env, sock_path, "/tmp/sshod-single-", &cleanup);
+	}
+
 	sau_state s(agent_env, sock_path);
 
 	if(!unslurp_file(STDOUT_FILENO, sock_path)) {
+		cleanup();
 		exit(EXIT_FAILURE);
 	}
 
@@ -293,9 +310,14 @@ int main(int argc, char **argv) {
 
 	s.poll_loop();
 
+	cleanup();
+
+	return 0;
+}
+
+void cleanup() {
 	if(!tempdir.empty()) {
 		rmdir(tempdir.c_str());
 	}
-
-	return 0;
+	cleanup_single_instance();
 }

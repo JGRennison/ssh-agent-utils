@@ -29,10 +29,13 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <arpa/inet.h>
+#include <sys/file.h>
 
+#include <b64/encode.h>
 #include <b64/decode.h>
 
 #include <cstring>
+#include <sstream>
 #include <algorithm>
 
 #include "ssh-agent-utils.h"
@@ -56,7 +59,10 @@ namespace SSHAgentUtils {
 				: ss(&ss_), pid(pid_), handler(std::move(handler_)) { }
 	};
 
-	std::vector<sigchld_pending_op> sigchld_ops;
+	namespace {
+		std::vector<sigchld_pending_op> sigchld_ops;
+		std::string single_lock_path;
+	};
 
 	// This handler must only get called when signals are unblocked during ppoll
 	void sigchld_handler(int sig) {
@@ -206,6 +212,97 @@ namespace SSHAgentUtils {
 			exit(EXIT_FAILURE);
 		}
 		return result;
+	}
+
+	void single_instance_check(const std::string &agent_env, const std::string &our_sock, std::string base_template, std::function<void()> cleanup) {
+		base64::encoder b64e;
+		std::istringstream ins(agent_env);
+		std::ostringstream ss;
+		b64e.encode(ins, ss);
+
+		std::string lockfile = base_template;
+		std::string b64 = ss.str();
+		std::remove_copy(b64.begin(), b64.end(), std::back_inserter(lockfile), '\n'); // Append the base64 representation of the real agent sock, minus any annoying newlines
+
+		auto cleanup_exit = [&](int status) {
+			cleanup();
+			exit(status);
+		};
+
+		auto new_lockfile = [&]() {
+			std::string lockfile_tmp = lockfile + "-XXXXXX";
+			int temp_fd = mkstemp((char *) lockfile_tmp.c_str());
+			if(temp_fd == -1) exit(EXIT_FAILURE);
+
+			// If we can't write to the new temp file, give up
+			if(!unslurp_file(temp_fd, our_sock)) cleanup_exit(EXIT_FAILURE);
+
+			// No-one else should have the temp file, if locking fails give up
+			if(flock(temp_fd, LOCK_EX | LOCK_NB) != 0) cleanup_exit(EXIT_FAILURE);
+
+			// Not that critical if this somehow fails
+			int flags = fcntl(temp_fd, F_GETFL, 0);
+			flags |= O_CLOEXEC;
+			fcntl(temp_fd, F_SETFL, flags);
+
+			fchmod(temp_fd, 0400);
+
+			int link_result = link(lockfile_tmp.c_str(), lockfile.c_str());
+			int link_errno = errno;
+			unlink(lockfile_tmp.c_str());
+			if(link_result == 0) {
+				// All OK
+				single_lock_path = lockfile;
+			}
+			else if(link_result == -1 && link_errno == EEXIST) {
+				// Someone sniped us, retry
+				close(temp_fd);
+				single_instance_check(agent_env, our_sock, base_template, cleanup);
+				return;
+			}
+			else cleanup_exit(EXIT_FAILURE);
+
+
+			// Do not close temp_fd
+		};
+
+		int fd = open(lockfile.c_str(), O_RDONLY);
+		if(fd == -1) {
+			new_lockfile();
+			return;
+		}
+
+		int result = flock(fd, LOCK_EX | LOCK_NB);
+		if(result == 0) {
+			// We are the exclusive owner of the existing lockfile
+			// This is bad news, as it means that the lockfile is stale
+			// Unlink it and make our own
+			unlink(lockfile.c_str());
+			close(fd);
+			new_lockfile();
+			return;
+		}
+		else if(result == -1 && errno == EWOULDBLOCK) {
+			// Someone else owns the lockfile
+			// This means that another instance is up and alive
+			// Use that, print contents of lockfile to STDOUT
+
+			std::vector<unsigned char> buffer;
+			if(!slurp_file(fd, buffer)) cleanup_exit(EXIT_FAILURE);
+			if(!unslurp_file(STDOUT_FILENO, buffer)) cleanup_exit(EXIT_FAILURE);
+			cleanup_exit(EXIT_SUCCESS);
+		}
+		else {
+			// Something unexpected, give up
+			cleanup_exit(EXIT_FAILURE);
+		}
+	}
+
+	void cleanup_single_instance() {
+		if(!single_lock_path.empty()) {
+			unlink(single_lock_path.c_str());
+			single_lock_path = "";
+		}
 	}
 
 	sau_state::sau_state(std::string agent, std::string our)
@@ -615,14 +712,14 @@ namespace SSHAgentUtils {
 
 		key.modified = s.st_mtime;
 
-		std::vector<char> filedata;
-		filedata.resize(s.st_size + 1);                             // +1 for null-terminator
-		int read_result = read(fd, filedata.data(), s.st_size + 1); // read one-larger
-		if(read_result != s.st_size) return bad_key();              // read failed, or size not as expected
+		std::vector<unsigned char> filedata;
+		filedata.reserve(s.st_size + 1);                            // +1 for null-terminator
+		if(!slurp_file(fd, filedata, s.st_size)) return bad_key();  // read failed
+		if(filedata.size() != (size_t) s.st_size) return bad_key(); // size not as expected
 
-		// filedata is now null-terminated
+		filedata.resize(filedata.size() + 1);                       // filedata is now null-terminated
 
-		char *token = std::strtok(filedata.data(), " ");
+		char *token = std::strtok((char *) filedata.data(), " ");
 		if(token) key.type = token;
 		else return bad_key();
 

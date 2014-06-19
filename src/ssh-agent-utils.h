@@ -40,6 +40,8 @@ namespace SSHAgentUtils {
 
 	std::string get_env_agent_sock_name();
 	std::string get_env_agent_sock_name_or_die();
+	void single_instance_check(const std::string &agent_env, const std::string &our_sock, std::string base_template, std::function<void()> cleanup);
+	void cleanup_single_instance();
 
 	class sau_state {
 		struct fdinfo {
