@@ -27,15 +27,30 @@
 
 using namespace SSHAgentUtils;
 
+struct ssh_add_options {
+	std::vector<std::string> args;
+};
+
+ssh_add_options global_options;
+
 struct on_demand_key {
 	std::string filename;
 	pubkey_file key;
 	std::vector<int> client_fds;        // List of client fds we have sent an on-demand key to
+	ssh_add_options options;
 
-	on_demand_key(std::string f) : filename(f) { }
+	on_demand_key(std::string f) : filename(f) {
+		// Start by duplicating global_options
+		options = global_options;
+	}
 };
 
 std::vector<on_demand_key> on_demand_keys;
+
+ssh_add_options &get_current_options() {
+	if(on_demand_keys.empty()) return global_options;
+	else return on_demand_keys.back().options;
+}
 
 struct ssh_add_operation {
 	pid_t pid = 0;
@@ -56,11 +71,22 @@ std::string tempdir;
 
 void show_usage() {
 	fprintf(stderr,
-			"Usage: ssh-agent-on-demand [options] pubkeyfiles ...\n"
-			"\tAn SSH agent proxy which adds public keys to identity lists.\n"
-			"\tIf such a public key is requested, the corresponding private key\n"
-			"\tis added on-demand using ssh-add.\n"
-			"Options:\n"
+			"Usage: ssh-agent-on-demand [options] [pubkeyfiles]\n"
+			"\tAn SSH agent proxy which adds public keys to the list of agent keys.\n"
+			"\tIf a client requests that the agent sign with an added key, the\n"
+			"\tcorresponding private key is added on-demand using ssh-add.\n"
+			"\tThe path to the listener socket is printed to STDOUT.\n"
+			"\n"
+			"Options which refer to the previous public key on the command line\n"
+			"If specified at the beginning, these apply to all keys on the command line\n"
+			"-c\n"
+			"\tPassed verbatim to ssh-add\n"
+			"\tRequire confirmation to sign using identities\n"
+			"-t life\n"
+			"\tPassed verbatim to ssh-add\n"
+			"\tSet lifetime (in seconds) when adding identities\n"
+			"\n"
+			"General Options:\n"
 			"-h, --help\n"
 			"\tShow this help\n"
 			"-s, --socket-path PATH\n"
@@ -72,11 +98,23 @@ void show_usage() {
 int main(int argc, char **argv) {
 	int n = 0;
 	while (n >= 0) {
-		n = getopt_long(argc, argv, "hs:", options, NULL);
+		n = getopt_long(argc, argv, "-s:ct:h", options, NULL);
 		if (n < 0) continue;
 		switch (n) {
 		case 's':
 			sock_path = optarg;
+			break;
+		case 'c':
+			get_current_options().args.push_back("-c");
+			break;
+		case 't': {
+			ssh_add_options &options = get_current_options();
+			options.args.push_back("-t");
+			options.args.push_back(optarg);
+			break;
+		}
+		case 1:
+			on_demand_keys.emplace_back(optarg);
 			break;
 		case '?':
 		case 'h':
@@ -185,6 +223,9 @@ int main(int argc, char **argv) {
 							priv_filename.resize(priv_filename.size() - 4);
 						}
 						args.push_back((char *) "ssh-add");
+						for(auto &it : k.options.args) {
+							args.push_back((char *) it.c_str());
+						}
 						args.push_back((char *) priv_filename.c_str());
 						args.push_back(nullptr);
 
