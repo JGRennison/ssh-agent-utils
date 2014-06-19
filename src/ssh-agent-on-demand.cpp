@@ -17,6 +17,9 @@
 //==========================================================================
 
 #include <getopt.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include <algorithm>
 
@@ -33,6 +36,14 @@ struct on_demand_key {
 };
 
 std::vector<on_demand_key> on_demand_keys;
+
+struct ssh_add_operation {
+	pid_t pid = 0;
+	keydata pubkey;
+	std::vector<int> unblock_agent_fds; // List of agent fds to unblock when ssh-add is complete
+};
+
+std::vector<ssh_add_operation> ssh_add_ops;
 
 static struct option options[] = {
 	{ "help",          no_argument,        NULL, 'h' },
@@ -128,6 +139,96 @@ int main(int argc, char **argv) {
 			ans.serialise(out);
 			ss.write_message(other_fd, out.data(), out.size());
 		}
+		else if(type == FDTYPE::CLIENT && l > 0 && d[0] == SSH2_AGENTC_SIGN_REQUEST) {
+			sign_request sr;
+			if(!sr.parse(d, l)) {
+				// parse failed
+				return;
+			}
+
+			for(auto &k : on_demand_keys) {
+				if(std::find(k.client_fds.begin(), k.client_fds.end(), this_fd) == k.client_fds.end()) continue;
+				// We sent this client this on-demand key
+
+				if(k.key != sr.pubkey) continue;
+				// This is the right key
+
+				auto it = std::find_if(ssh_add_ops.begin(), ssh_add_ops.end(), [&](const ssh_add_operation &op) {
+					return op.pubkey == k.key;
+				});
+				if(it == ssh_add_ops.end()) {
+					// Don't have an existing ssh-add request for this key, make new one
+					ssh_add_ops.emplace_back();
+					it = ssh_add_ops.end() - 1;
+					it->pubkey = k.key;
+
+					int child_pid = fork();
+					if(child_pid < -1) {
+						// failed: give up
+						ssh_add_ops.pop_back();
+						break;
+					}
+					else if(child_pid == 0) {
+						// child
+						// close stdout and stdin
+						int nullfd = open("/dev/null", O_RDWR);
+						dup2(nullfd, STDOUT_FILENO);
+						dup2(nullfd, STDIN_FILENO);
+						close(nullfd);
+
+						std::vector<char*> args;
+						std::string priv_filename = k.filename;
+						if(priv_filename.size() > 4 && priv_filename.substr(priv_filename.size() - 4, 4) == ".pub") {
+							// snip off .pub
+							priv_filename.resize(priv_filename.size() - 4);
+						}
+						args.push_back((char *) "ssh-add");
+						args.push_back((char *) priv_filename.c_str());
+						args.push_back(nullptr);
+
+						execvp("ssh-add", args.data());
+
+						fprintf(stderr, "ssh-add execvp failed: %m\n");
+						exit(EXIT_FAILURE);
+					}
+					else {
+						// parent
+						it->pid = child_pid;
+
+						// NB: this will be called from SIGCHLD handler
+						ss.add_sigchld_handler(child_pid, [](sau_state &ss, pid_t pid, int status) {
+							auto it = std::find_if(ssh_add_ops.begin(), ssh_add_ops.end(), [&](const ssh_add_operation &op) {
+								return op.pid == pid;
+							});
+							if(it != ssh_add_ops.end()) {
+								// Found op
+								for(int fd : it->unblock_agent_fds) {
+									ss.set_output_block_state(fd, false);
+								}
+
+								for(on_demand_key &k : on_demand_keys) {
+									if(k.key == it->pubkey) {
+										// If we previously advertised to a client that we have this key on demand,
+										// now forget that we did so. This is as the real agent now nominally has
+										// this key and so we do not need to call ssh-add for it again
+										k.client_fds.resize(0);
+									}
+								}
+
+								ssh_add_ops.erase(it);
+							}
+						});
+					}
+
+				}
+				it->unblock_agent_fds.push_back(other_fd);
+				ss.set_output_block_state(other_fd, true);
+				break;
+			}
+
+			// If calling ssh-add, this message will be held in agent output queue, until agent output unblocked
+			ss.write_message(other_fd, d, l);
+		}
 		else {
 			ss.write_message(other_fd, d, l);
 		}
@@ -138,7 +239,13 @@ int main(int argc, char **argv) {
 			// If this client fd is listed, remove it
 			k.client_fds.erase(std::remove(k.client_fds.begin(), k.client_fds.end(), client_fd), k.client_fds.end());
 		}
+
+		for(auto &o : ssh_add_ops) {
+			// If agent fd is listed, remove it
+			o.unblock_agent_fds.erase(std::remove(o.unblock_agent_fds.begin(), o.unblock_agent_fds.end(), agent_fd), o.unblock_agent_fds.end());
+		}
 	};
+
 	s.poll_loop();
 
 	if(!tempdir.empty()) {

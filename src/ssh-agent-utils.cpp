@@ -27,6 +27,7 @@
 #include <sys/un.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <arpa/inet.h>
 
 #include <b64/decode.h>
@@ -44,6 +45,55 @@ namespace SSHAgentUtils {
 
 	void sighandler(int sig) {
 		force_exit = true;
+	}
+
+	struct sigchld_pending_op {
+		sau_state *ss;
+		pid_t pid;
+		std::function<void(sau_state &, pid_t pid, int /* wait status */)> handler;
+
+		sigchld_pending_op(sau_state &ss_, pid_t pid_, std::function<void(sau_state &, pid_t, int /* wait status */)> handler_)
+				: ss(&ss_), pid(pid_), handler(std::move(handler_)) { }
+	};
+
+	std::vector<sigchld_pending_op> sigchld_ops;
+
+	// This handler must only get called when signals are unblocked during ppoll
+	void sigchld_handler(int sig) {
+		while(true) {
+			int status;
+			pid_t pid = waitpid(-1, &status, WNOHANG);
+			if(pid == -1) return;
+
+#ifdef DEBUG
+			fprintf(stderr, "sigchld_handler called for pid: %d, result: 0x%X\n", pid, status);
+#endif
+
+			auto it = std::find_if(sigchld_ops.begin(), sigchld_ops.end(), [&](const sigchld_pending_op &op) {
+				return op.pid == pid;
+			});
+			if(it != sigchld_ops.end()) {
+				// Found a handler for this pid
+
+#ifdef DEBUG
+				fprintf(stderr, "sigchld_handler found handler\n");
+#endif
+
+				// Remove handler before calling it in case calling it adds another handler
+				sau_state *ss = it->ss;
+				auto handler = std::move(it->handler);
+				sigchld_ops.erase(it);
+
+				if(handler) handler(*ss, pid, status);
+			}
+		}
+	}
+
+	// Remove all SIGCHLD pending ops which use a given sau_state, this is to stop the sau_state being used after it is finished/destructed
+	void remove_sigchld_pending_ops(sau_state &ss) {
+		sigchld_ops.erase(std::remove_if(sigchld_ops.begin(), sigchld_ops.end(), [&](const sigchld_pending_op &op) {
+			return op.ss == &ss;
+		}), sigchld_ops.end());
 	}
 
 	// optionally also set O_CLOEXEC here
@@ -162,6 +212,7 @@ namespace SSHAgentUtils {
 			: agent_sock_name(std::move(agent)), our_sock_name(std::move(our)) { }
 
 	sau_state::~sau_state() {
+		remove_sigchld_pending_ops(*this);
 	}
 
 	void sau_state::addpollfd(int fd, short events, FDTYPE type) {
@@ -505,6 +556,7 @@ namespace SSHAgentUtils {
 		sigaddset(&mask, SIGTERM);
 		sigaddset(&mask, SIGINT);
 		sigaddset(&mask, SIGHUP);
+		sigaddset(&mask, SIGCHLD);
 		sigprocmask(SIG_SETMASK, &mask, nullptr);
 
 		struct sigaction new_action;
@@ -513,8 +565,14 @@ namespace SSHAgentUtils {
 		sigaction(SIGINT, &new_action, 0);
 		sigaction(SIGHUP, &new_action, 0);
 		sigaction(SIGTERM, &new_action, 0);
+		new_action.sa_handler = sigchld_handler;
+		sigaction(SIGCHLD, &new_action, 0);
 		new_action.sa_handler = SIG_IGN;
 		sigaction(SIGPIPE, &new_action, 0);
+	}
+
+	void sau_state::add_sigchld_handler(pid_t pid, std::function<void(sau_state &, pid_t, int /* wait status */)> handler) {
+		sigchld_ops.emplace_back(*this, pid, std::move(handler));
 	}
 
 	bool keydata::operator==(const keydata &other) const {
@@ -631,6 +689,28 @@ namespace SSHAgentUtils {
 			serialise_rfc4251_string(out, k.data.data(), k.data.size());
 			serialise_rfc4251_string(out, (const unsigned char*) k.comment.data(), k.comment.size());
 		}
+	}
+
+	bool sign_request::parse(const unsigned char *d, size_t l) {
+		if(l < 1) return false;
+		if(d[0] != SSH2_AGENTC_SIGN_REQUEST) return false;
+		d++;
+		l--;
+
+		bool ok = true;
+		pubkey.data = consume_rfc4251_string_v(d, l, ok);
+		data = consume_rfc4251_string_v(d, l, ok);
+		flags = consume_rfc4251_u32(d, l, ok);
+
+		if(l) ok = false;
+
+#ifdef DEBUG
+		if(ok) {
+			fprintf(stderr, "SSH2_AGENTC_SIGN_REQUEST found\n");
+		}
+#endif
+
+		return ok;
 	}
 
 	// This function is from http://stackoverflow.com/a/8098080

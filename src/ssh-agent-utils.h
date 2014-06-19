@@ -75,6 +75,7 @@ namespace SSHAgentUtils {
 		void poll_loop();
 		void handle_fd(int fd, short revents, bool &continue_flag);
 		void set_signal_handlers();
+		void add_sigchld_handler(pid_t pid, std::function<void(sau_state &, pid_t, int /* wait status */)> handler);
 
 		// Caller should set this
 		std::function<void(sau_state &, FDTYPE, int, int, const unsigned char *, size_t)> msg_handler;   // src fd, other fd
@@ -101,6 +102,7 @@ namespace SSHAgentUtils {
 
 	enum {
 		SSH2_AGENT_IDENTITIES_ANSWER = 12,
+		SSH2_AGENTC_SIGN_REQUEST = 13,
 	};
 
 	struct identities_answer {
@@ -108,6 +110,14 @@ namespace SSHAgentUtils {
 
 		bool parse(const unsigned char *d, size_t l);
 		void serialise(std::vector<unsigned char> &out);
+	};
+
+	struct sign_request {
+		keydata pubkey;
+		std::vector<unsigned char> data;
+		uint32_t flags;
+
+		bool parse(const unsigned char *d, size_t l);
 	};
 
 	std::string string_format(const std::string &fmt, ...);
