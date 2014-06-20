@@ -82,30 +82,37 @@ void show_usage() {
 			"General Options:\n"
 			"-h, --help\n"
 			"\tShow this help\n"
+			"-s, --bourne-shell\n"
+			"\tPrint agent socket path and pid as Bourne shell environment commands.\n"
+			"\tDefaults to printing only the agent socket path.\n"
 			"-1, --single-instance\n"
 			"\tIf another instance which also used this switch is proxying the *same*\n"
 			"\tagent socket, print the path to its socket and exit.\n"
-			"-s, --socket-path PATH\n"
-			"\tCreate the listener socket at PATH\n"
+			"--socket-path PATH\n"
+			"\tCreate the agent socket at PATH\n"
 			"\tDefaults to a path of the form /tmp/sshod-XXXXXX/agentod.pid\n"
 	);
 }
 
 static struct option options[] = {
 	{ "help",            no_argument,        NULL, 'h' },
-	{ "socket-path",     required_argument,  NULL, 's' },
+	{ "socket-path",     required_argument,  NULL,  2  },
 	{ "single-instance", required_argument,  NULL, '1' },
+	{ "bourne-shell",    required_argument,  NULL, 's' },
 	{ NULL, 0, 0, 0 }
 };
 
 void do_cmd_line(sau_state &s, int argc, char **argv) {
 	int n = 0;
 	while (n >= 0) {
-		n = getopt_long(argc, argv, "-s:1ct:h", options, NULL);
+		n = getopt_long(argc, argv, "-S:s1ct:h", options, NULL);
 		if (n < 0) continue;
 		switch (n) {
-		case 's':
+		case 2:
 			s.our_sock_name = optarg;
+			break;
+		case 's':
+			s.print_sock_bourne = true;
 			break;
 		case '1':
 			s.single_instance = true;
@@ -136,6 +143,7 @@ void do_cmd_line(sau_state &s, int argc, char **argv) {
 
 int main(int argc, char **argv) {
 	sau_state s;
+	s.print_sock_name = true;
 
 	do_cmd_line(s, argc, argv);
 
@@ -144,11 +152,6 @@ int main(int argc, char **argv) {
 	s.set_sock_temp_dir_if("/tmp/sshod", "agentod");
 	s.make_listen_sock();
 	s.single_instance_check_and_create_lockfile_if();
-
-	if(!unslurp_file(STDOUT_FILENO, s.our_sock_name)) {
-		s.cleanup();
-		exit(EXIT_FAILURE);
-	}
 
 	s.set_signal_handlers();
 

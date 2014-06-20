@@ -63,6 +63,8 @@ namespace SSHAgentUtils {
 		std::string agent_sock_name;
 		std::string our_sock_name;
 		bool single_instance = false;
+		bool print_sock_name = false;
+		bool print_sock_bourne = false;
 
 		sau_state();
 		~sau_state();
@@ -84,6 +86,7 @@ namespace SSHAgentUtils {
 		bool set_sock_temp_dir_if(const char *dir_template, const char *agent_basename);
 		void single_instance_precheck_if(std::string base_template);
 		void single_instance_check_and_create_lockfile_if();
+		void check_print_sock_name(int fd, std::string sock, pid_t pid);
 
 		// Caller should set this
 		std::function<void(sau_state &, FDTYPE, int, int, const unsigned char *, size_t)> msg_handler;   // src fd, other fd

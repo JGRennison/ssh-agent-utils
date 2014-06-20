@@ -63,6 +63,8 @@ namespace SSHAgentUtils {
 		std::vector<sigchld_pending_op> sigchld_ops;
 		std::string single_lock_path;
 		std::string lockfile;
+		std::function<void()> single_lock_cleanup_handler;
+		std::function<void(std::string, pid_t)> single_lock_already_exists_handler;
 	};
 
 	// This handler must only get called when signals are unblocked during ppoll
@@ -198,6 +200,10 @@ namespace SSHAgentUtils {
 		out.insert(out.end(), start, start + length);
 	}
 
+	void serialise_rfc4251_string(std::vector<unsigned char> &out, const std::string &str) {
+		serialise_rfc4251_string(out, (const unsigned char*) str.data(), str.size());
+	}
+
 	std::string get_env_agent_sock_name() {
 		const char *agent_sock_str = getenv("SSH_AUTH_SOCK");
 		if(!agent_sock_str || *agent_sock_str == 0) {
@@ -215,11 +221,12 @@ namespace SSHAgentUtils {
 		return result;
 	}
 
-	// Return if lockfile not present
-	// Otherwise call cleanup then exit()
-	static void single_instance_check_lockfile(std::function<void()> cleanup) {
+	// Calls already_exists and exits if lockfile exists
+	// Just returns if lockfile does not exist
+	// Calls cleanup and exit if something went wrong
+	static void single_instance_check_lockfile() {
 		auto cleanup_exit = [&](int status) {
-			cleanup();
+			single_lock_cleanup_handler();
 			exit(status);
 		};
 
@@ -244,7 +251,16 @@ namespace SSHAgentUtils {
 
 			std::vector<unsigned char> buffer;
 			if(!slurp_file(fd, buffer)) cleanup_exit(EXIT_FAILURE);
-			if(!unslurp_file(STDOUT_FILENO, buffer)) cleanup_exit(EXIT_FAILURE);
+
+			// This extracts the info from the lockfile, which is in rfc4251 format
+			bool ok = true;
+			const unsigned char *d = buffer.data();
+			size_t l = buffer.size();
+			pid_t agent_pid = consume_rfc4251_u32(d, l, ok);
+			std::string agent_sock = consume_rfc4251_string(d, l, ok);
+			if(!ok || l) cleanup_exit(EXIT_FAILURE);
+
+			single_lock_already_exists_handler(agent_sock, agent_pid);
 			cleanup_exit(EXIT_SUCCESS);
 		}
 		else {
@@ -253,9 +269,10 @@ namespace SSHAgentUtils {
 		}
 	}
 
-	// Return if lockfile not present
-	// Otherwise call cleanup then exit()
-	void single_instance_check(const std::string &agent_env, std::string base_template, std::function<void()> cleanup) {
+	// Calls already_exists and exits if lockfile exists
+	// Just returns if lockfile does not exist
+	// Calls cleanup and exit if something went wrong
+	void single_instance_check(const std::string &agent_env, std::string base_template, std::function<void()> cleanup, std::function<void(std::string, pid_t)> already_exists) {
 		base64::encoder b64e;
 		std::istringstream ins(agent_env);
 		std::ostringstream ss;
@@ -265,14 +282,18 @@ namespace SSHAgentUtils {
 		std::string b64 = ss.str();
 		std::remove_copy(b64.begin(), b64.end(), std::back_inserter(lockfile), '\n'); // Append the base64 representation of the real agent sock, minus any annoying newlines
 
-		single_instance_check_lockfile(cleanup);
+		single_lock_cleanup_handler = std::move(cleanup);
+		single_lock_already_exists_handler = std::move(already_exists);
+
+		single_instance_check_lockfile();
 	}
 
-	// Return if lockfile not present, and is now created
-	// Otherwise call cleanup then exit()
-	void single_instance_check_and_create_lockfile(const std::string &our_sock, std::function<void()> cleanup) {
+	// Calls already_exists and exits if lockfile exists
+	// Just returns if lockfile does not exist
+	// Calls cleanup and exit if something went wrong
+	void single_instance_check_and_create_lockfile(const std::string &our_sock) {
 		auto cleanup_exit = [&](int status) {
-			cleanup();
+			single_lock_cleanup_handler();
 			exit(status);
 		};
 
@@ -281,7 +302,10 @@ namespace SSHAgentUtils {
 		if(temp_fd == -1) exit(EXIT_FAILURE);
 
 		// If we can't write to the new temp file, give up
-		if(!unslurp_file(temp_fd, our_sock)) cleanup_exit(EXIT_FAILURE);
+		std::vector<unsigned char> temp_fd_data;
+		serialise_rfc4251_u32(temp_fd_data, getpid());
+		serialise_rfc4251_string(temp_fd_data, our_sock);
+		if(!unslurp_file(temp_fd, temp_fd_data)) cleanup_exit(EXIT_FAILURE);
 
 		// No-one else should have the temp file, if locking fails give up
 		if(flock(temp_fd, LOCK_EX | LOCK_NB) != 0) cleanup_exit(EXIT_FAILURE);
@@ -303,8 +327,8 @@ namespace SSHAgentUtils {
 		else if(link_result == -1 && link_errno == EEXIST) {
 			// Someone sniped us, retry
 			close(temp_fd);
-			single_instance_check_lockfile(cleanup);
-			single_instance_check_and_create_lockfile(our_sock, cleanup);
+			single_instance_check_lockfile();
+			single_instance_check_and_create_lockfile(our_sock);
 			return;
 		}
 		else cleanup_exit(EXIT_FAILURE);
@@ -414,6 +438,9 @@ namespace SSHAgentUtils {
 
 		setnonblock(sock);
 		addpollfd(sock, POLLIN | POLLERR, FDTYPE::LISTENER);
+
+		check_print_sock_name(STDOUT_FILENO, our_sock_name, -1);
+
 		return sock;
 	}
 
@@ -713,6 +740,8 @@ namespace SSHAgentUtils {
 		if(single_instance) {
 			single_instance_check(agent_sock_name, base_template, [&]() {
 				cleanup();
+			}, [&](std::string agent_sock, pid_t agent_pid) {
+				check_print_sock_name(STDOUT_FILENO, agent_sock, agent_pid);
 			});
 		}
 	}
@@ -720,9 +749,26 @@ namespace SSHAgentUtils {
 	// If another instance already exists, execution stops here
 	void sau_state::single_instance_check_and_create_lockfile_if() {
 		if(single_instance) {
-			single_instance_check_and_create_lockfile(our_sock_name, [&]() {
+			single_instance_check_and_create_lockfile(our_sock_name);
+		}
+	}
+
+	// if pid is -1, getpid is called
+	void sau_state::check_print_sock_name(int fd, std::string sock, pid_t pid) {
+		if(print_sock_name) {
+			std::string str;
+			if(print_sock_bourne) {
+				if(pid == -1) pid = getpid();
+				str = string_format("SSH_AUTH_SOCK=%s; export SSH_AUTH_SOCK;\nSSH_AGENT_PID=%d; export SSH_AGENT_PID;\necho On demand agent proxy pid %d;\n",
+						sock.c_str(), pid, pid);
+			}
+			else {
+				str = sock;
+			}
+			if(!unslurp_file(fd, str)) {
 				cleanup();
-			});
+				exit(EXIT_FAILURE);
+			}
 		}
 	}
 
