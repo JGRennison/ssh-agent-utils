@@ -59,12 +59,19 @@ namespace SSHAgentUtils {
 		std::string tempdir;
 		bool should_unlink_listen_sock = false;
 
+		void do_exec(std::string sock, pid_t pid);
+
 	public:
 		std::string agent_sock_name;
 		std::string our_sock_name;
+		int our_sock_pid = -1;
 		bool single_instance = false;
 		bool print_sock_name = false;
 		bool print_sock_bourne = false;
+		char *exec_cmd = nullptr;
+		std::vector<char *> exec_array;
+
+		int exit_code = 0;
 
 		sau_state();
 		~sau_state();

@@ -99,13 +99,14 @@ static struct option options[] = {
 	{ "socket-path",     required_argument,  NULL,  2  },
 	{ "single-instance", required_argument,  NULL, '1' },
 	{ "bourne-shell",    required_argument,  NULL, 's' },
+	{ "execute",         required_argument,  NULL, 'e' },
 	{ NULL, 0, 0, 0 }
 };
 
 void do_cmd_line(sau_state &s, int argc, char **argv) {
 	int n = 0;
 	while (n >= 0) {
-		n = getopt_long(argc, argv, "-S:s1ct:h", options, NULL);
+		n = getopt_long(argc, argv, "-S:s1ct:e:h", options, NULL);
 		if (n < 0) continue;
 		switch (n) {
 		case 2:
@@ -126,6 +127,12 @@ void do_cmd_line(sau_state &s, int argc, char **argv) {
 			options.args.push_back(optarg);
 			break;
 		}
+		case 'e':
+			// All remaining args are the cmd to execute
+			s.print_sock_name = false;
+			s.exec_cmd = optarg;
+			s.exec_array.insert(s.exec_array.end(), argv + optind, argv + argc);
+			return;
 		case 1:
 			on_demand_keys.emplace_back(optarg);
 			break;
@@ -304,5 +311,5 @@ int main(int argc, char **argv) {
 
 	s.poll_loop();
 
-	return 0;
+	return s.exit_code;
 }

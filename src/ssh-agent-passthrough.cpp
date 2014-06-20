@@ -32,5 +32,5 @@ int main(int argc, char **argv) {
 	};
 	s.poll_loop();
 
-	return 0;
+	return s.exit_code;
 }

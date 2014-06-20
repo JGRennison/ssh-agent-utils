@@ -45,9 +45,15 @@ namespace SSHAgentUtils {
 	const size_t read_size = 8192;
 
 	bool force_exit = false;
+	int signal_forward_pid_instead = 0;
 
 	void sighandler(int sig) {
-		force_exit = true;
+		if(signal_forward_pid_instead) {
+			kill(signal_forward_pid_instead, sig);
+		}
+		else {
+			force_exit = true;
+		}
 	}
 
 	struct sigchld_pending_op {
@@ -72,7 +78,7 @@ namespace SSHAgentUtils {
 		while(true) {
 			int status;
 			pid_t pid = waitpid(-1, &status, WNOHANG);
-			if(pid == -1) return;
+			if(pid <= 0) return;
 
 #ifdef DEBUG
 			fprintf(stderr, "sigchld_handler called for pid: %d, result: 0x%X\n", pid, status);
@@ -429,6 +435,7 @@ namespace SSHAgentUtils {
 		}
 
 		should_unlink_listen_sock = true;
+		our_sock_pid = getpid();
 
 		if(listen(sock, 64) == -1) {
 			fail();
@@ -439,7 +446,23 @@ namespace SSHAgentUtils {
 		setnonblock(sock);
 		addpollfd(sock, POLLIN | POLLERR, FDTYPE::LISTENER);
 
-		check_print_sock_name(STDOUT_FILENO, our_sock_name, -1);
+		check_print_sock_name(STDOUT_FILENO, our_sock_name, our_sock_pid);
+
+		if(exec_cmd) {
+			int pid = fork();
+			if(pid < 0) exit(EXIT_FAILURE);
+			else if(pid == 0) do_exec(our_sock_name, our_sock_pid);
+			else {
+				signal_forward_pid_instead = pid;
+				add_sigchld_handler(pid, [](sau_state &ss, pid_t pid, int status) {
+					force_exit = true;
+
+					// See this thread for the rationale behind this
+					// http://stackoverflow.com/questions/18640737/why-arent-i-picking-up-the-exit-status-from-my-child-process
+					ss.exit_code = ((status & 0x7F) ? (status | 0x80) : (status >> 8)) & 0xFF;
+				});
+			}
+		}
 
 		return sock;
 	}
@@ -742,6 +765,10 @@ namespace SSHAgentUtils {
 				cleanup();
 			}, [&](std::string agent_sock, pid_t agent_pid) {
 				check_print_sock_name(STDOUT_FILENO, agent_sock, agent_pid);
+				if(exec_cmd) {
+					cleanup();
+					do_exec(agent_sock, agent_pid);
+				}
 			});
 		}
 	}
@@ -753,12 +780,10 @@ namespace SSHAgentUtils {
 		}
 	}
 
-	// if pid is -1, getpid is called
 	void sau_state::check_print_sock_name(int fd, std::string sock, pid_t pid) {
 		if(print_sock_name) {
 			std::string str;
 			if(print_sock_bourne) {
-				if(pid == -1) pid = getpid();
 				str = string_format("SSH_AUTH_SOCK=%s; export SSH_AUTH_SOCK;\nSSH_AGENT_PID=%d; export SSH_AGENT_PID;\necho On demand agent proxy pid %d;\n",
 						sock.c_str(), pid, pid);
 			}
@@ -770,6 +795,20 @@ namespace SSHAgentUtils {
 				exit(EXIT_FAILURE);
 			}
 		}
+	}
+
+	void sau_state::do_exec(std::string sock, pid_t pid) {
+		std::string authenv = string_format("SSH_AUTH_SOCK=%s", sock.c_str());
+		std::string pidenv = string_format("SSH_AGENT_PID=%d", pid);
+		putenv((char *) authenv.c_str());
+		putenv((char *) pidenv.c_str());
+
+		exec_array.push_back(0);
+		exec_array.insert(exec_array.begin(), exec_cmd);
+		execvp(exec_cmd, exec_array.data());
+
+		fprintf(stderr, "execvp '%s' failed: %m\n", exec_cmd);
+		exit(EXIT_FAILURE);
 	}
 
 	bool keydata::operator==(const keydata &other) const {
