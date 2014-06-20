@@ -40,8 +40,6 @@ namespace SSHAgentUtils {
 
 	std::string get_env_agent_sock_name();
 	std::string get_env_agent_sock_name_or_die();
-	void single_instance_check(const std::string &agent_env, const std::string &our_sock, std::string base_template, std::function<void()> cleanup);
-	void cleanup_single_instance();
 
 	class sau_state {
 		struct fdinfo {
@@ -58,13 +56,18 @@ namespace SSHAgentUtils {
 		std::vector<struct pollfd> pollfds;
 		std::deque<struct fdinfo> fdinfos;
 
-		std::string agent_sock_name;
-		std::string our_sock_name;
+		std::string tempdir;
+		bool should_unlink_listen_sock = false;
 
 	public:
-		sau_state(std::string agent, std::string our);
+		std::string agent_sock_name;
+		std::string our_sock_name;
+		bool single_instance = false;
+
+		sau_state();
 		~sau_state();
 
+		void cleanup();
 		void addpollfd(int fd, short events, FDTYPE type);
 		void delpollfd(int fd);
 		void setpollfdevents(int fd, short events);
@@ -78,6 +81,9 @@ namespace SSHAgentUtils {
 		void handle_fd(int fd, short revents, bool &continue_flag);
 		void set_signal_handlers();
 		void add_sigchld_handler(pid_t pid, std::function<void(sau_state &, pid_t, int /* wait status */)> handler);
+		bool set_sock_temp_dir_if(const char *dir_template, const char *agent_basename);
+		void single_instance_precheck_if(std::string base_template);
+		void single_instance_check_and_create_lockfile_if();
 
 		// Caller should set this
 		std::function<void(sau_state &, FDTYPE, int, int, const unsigned char *, size_t)> msg_handler;   // src fd, other fd

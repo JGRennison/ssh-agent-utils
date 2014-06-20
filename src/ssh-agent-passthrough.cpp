@@ -21,9 +21,12 @@
 using namespace SSHAgentUtils;
 
 int main(int argc, char **argv) {
-	sau_state s(get_env_agent_sock_name_or_die(), "ssh-agent-passthrough-sock");
 
+	sau_state s;
+	s.agent_sock_name = get_env_agent_sock_name_or_die();
+	s.our_sock_name = "ssh-agent-passthrough-sock";
 	s.set_signal_handlers();
+	s.make_listen_sock();
 	s.msg_handler = [](sau_state &ss, FDTYPE type, int this_fd, int other_fd, const unsigned char *d, size_t l) {
 		ss.write_message(other_fd, d, l);
 	};

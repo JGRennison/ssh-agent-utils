@@ -61,17 +61,6 @@ struct ssh_add_operation {
 std::vector<ssh_add_operation> ssh_add_ops;
 
 void single_instance_check(const std::string &agent_env);
-void cleanup();
-
-static struct option options[] = {
-	{ "help",            no_argument,        NULL, 'h' },
-	{ "socket-path",     required_argument,  NULL, 's' },
-	{ "single-instance", required_argument,  NULL, '1' },
-	{ NULL, 0, 0, 0 }
-};
-
-std::string sock_path;
-std::string tempdir;
 
 void show_usage() {
 	fprintf(stderr,
@@ -102,19 +91,24 @@ void show_usage() {
 	);
 }
 
-int main(int argc, char **argv) {
-	bool single_instance = false;
+static struct option options[] = {
+	{ "help",            no_argument,        NULL, 'h' },
+	{ "socket-path",     required_argument,  NULL, 's' },
+	{ "single-instance", required_argument,  NULL, '1' },
+	{ NULL, 0, 0, 0 }
+};
 
+void do_cmd_line(sau_state &s, int argc, char **argv) {
 	int n = 0;
 	while (n >= 0) {
 		n = getopt_long(argc, argv, "-s:1ct:h", options, NULL);
 		if (n < 0) continue;
 		switch (n) {
 		case 's':
-			sock_path = optarg;
+			s.our_sock_name = optarg;
 			break;
 		case '1':
-			single_instance = true;
+			s.single_instance = true;
 			break;
 		case 'c':
 			get_current_options().args.push_back("-c");
@@ -138,24 +132,21 @@ int main(int argc, char **argv) {
 	while(optind < argc) {
 		on_demand_keys.emplace_back(argv[optind++]);
 	}
+}
 
-	std::string agent_env = get_env_agent_sock_name_or_die();
+int main(int argc, char **argv) {
+	sau_state s;
 
-	if(sock_path.empty()) {
-		char tmp[] = "/tmp/sshod-XXXXXX";
-		if(!mkdtemp(tmp)) exit(EXIT_FAILURE);
-		tempdir = tmp;
-		sock_path = string_format("%s/agentod.%d", tmp, (int) getpid());
-	}
+	do_cmd_line(s, argc, argv);
 
-	if(single_instance) {
-		single_instance_check(agent_env, sock_path, "/tmp/sshod-single-", &cleanup);
-	}
+	s.agent_sock_name = get_env_agent_sock_name_or_die();
+	s.single_instance_precheck_if("/tmp/sshod-single");
+	s.set_sock_temp_dir_if("/tmp/sshod", "agentod");
+	s.make_listen_sock();
+	s.single_instance_check_and_create_lockfile_if();
 
-	sau_state s(agent_env, sock_path);
-
-	if(!unslurp_file(STDOUT_FILENO, sock_path)) {
-		cleanup();
+	if(!unslurp_file(STDOUT_FILENO, s.our_sock_name)) {
+		s.cleanup();
 		exit(EXIT_FAILURE);
 	}
 
@@ -310,14 +301,5 @@ int main(int argc, char **argv) {
 
 	s.poll_loop();
 
-	cleanup();
-
 	return 0;
-}
-
-void cleanup() {
-	if(!tempdir.empty()) {
-		rmdir(tempdir.c_str());
-	}
-	cleanup_single_instance();
 }

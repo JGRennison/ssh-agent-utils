@@ -62,6 +62,7 @@ namespace SSHAgentUtils {
 	namespace {
 		std::vector<sigchld_pending_op> sigchld_ops;
 		std::string single_lock_path;
+		std::string lockfile;
 	};
 
 	// This handler must only get called when signals are unblocked during ppoll
@@ -214,61 +215,16 @@ namespace SSHAgentUtils {
 		return result;
 	}
 
-	void single_instance_check(const std::string &agent_env, const std::string &our_sock, std::string base_template, std::function<void()> cleanup) {
-		base64::encoder b64e;
-		std::istringstream ins(agent_env);
-		std::ostringstream ss;
-		b64e.encode(ins, ss);
-
-		std::string lockfile = base_template;
-		std::string b64 = ss.str();
-		std::remove_copy(b64.begin(), b64.end(), std::back_inserter(lockfile), '\n'); // Append the base64 representation of the real agent sock, minus any annoying newlines
-
+	// Return if lockfile not present
+	// Otherwise call cleanup then exit()
+	static void single_instance_check_lockfile(std::function<void()> cleanup) {
 		auto cleanup_exit = [&](int status) {
 			cleanup();
 			exit(status);
 		};
 
-		auto new_lockfile = [&]() {
-			std::string lockfile_tmp = lockfile + "-XXXXXX";
-			int temp_fd = mkstemp((char *) lockfile_tmp.c_str());
-			if(temp_fd == -1) exit(EXIT_FAILURE);
-
-			// If we can't write to the new temp file, give up
-			if(!unslurp_file(temp_fd, our_sock)) cleanup_exit(EXIT_FAILURE);
-
-			// No-one else should have the temp file, if locking fails give up
-			if(flock(temp_fd, LOCK_EX | LOCK_NB) != 0) cleanup_exit(EXIT_FAILURE);
-
-			// Not that critical if this somehow fails
-			int flags = fcntl(temp_fd, F_GETFL, 0);
-			flags |= O_CLOEXEC;
-			fcntl(temp_fd, F_SETFL, flags);
-
-			fchmod(temp_fd, 0400);
-
-			int link_result = link(lockfile_tmp.c_str(), lockfile.c_str());
-			int link_errno = errno;
-			unlink(lockfile_tmp.c_str());
-			if(link_result == 0) {
-				// All OK
-				single_lock_path = lockfile;
-			}
-			else if(link_result == -1 && link_errno == EEXIST) {
-				// Someone sniped us, retry
-				close(temp_fd);
-				single_instance_check(agent_env, our_sock, base_template, cleanup);
-				return;
-			}
-			else cleanup_exit(EXIT_FAILURE);
-
-
-			// Do not close temp_fd
-		};
-
 		int fd = open(lockfile.c_str(), O_RDONLY);
 		if(fd == -1) {
-			new_lockfile();
 			return;
 		}
 
@@ -279,7 +235,6 @@ namespace SSHAgentUtils {
 			// Unlink it and make our own
 			unlink(lockfile.c_str());
 			close(fd);
-			new_lockfile();
 			return;
 		}
 		else if(result == -1 && errno == EWOULDBLOCK) {
@@ -298,18 +253,86 @@ namespace SSHAgentUtils {
 		}
 	}
 
-	void cleanup_single_instance() {
+	// Return if lockfile not present
+	// Otherwise call cleanup then exit()
+	void single_instance_check(const std::string &agent_env, std::string base_template, std::function<void()> cleanup) {
+		base64::encoder b64e;
+		std::istringstream ins(agent_env);
+		std::ostringstream ss;
+		b64e.encode(ins, ss);
+
+		lockfile = base_template + "-";
+		std::string b64 = ss.str();
+		std::remove_copy(b64.begin(), b64.end(), std::back_inserter(lockfile), '\n'); // Append the base64 representation of the real agent sock, minus any annoying newlines
+
+		single_instance_check_lockfile(cleanup);
+	}
+
+	// Return if lockfile not present, and is now created
+	// Otherwise call cleanup then exit()
+	void single_instance_check_and_create_lockfile(const std::string &our_sock, std::function<void()> cleanup) {
+		auto cleanup_exit = [&](int status) {
+			cleanup();
+			exit(status);
+		};
+
+		std::string lockfile_tmp = lockfile + "-XXXXXX";
+		int temp_fd = mkstemp((char *) lockfile_tmp.c_str());
+		if(temp_fd == -1) exit(EXIT_FAILURE);
+
+		// If we can't write to the new temp file, give up
+		if(!unslurp_file(temp_fd, our_sock)) cleanup_exit(EXIT_FAILURE);
+
+		// No-one else should have the temp file, if locking fails give up
+		if(flock(temp_fd, LOCK_EX | LOCK_NB) != 0) cleanup_exit(EXIT_FAILURE);
+
+		// Not that critical if this somehow fails
+		int flags = fcntl(temp_fd, F_GETFL, 0);
+		flags |= O_CLOEXEC;
+		fcntl(temp_fd, F_SETFL, flags);
+
+		fchmod(temp_fd, 0400);
+
+		int link_result = link(lockfile_tmp.c_str(), lockfile.c_str());
+		int link_errno = errno;
+		unlink(lockfile_tmp.c_str());
+		if(link_result == 0) {
+			// All OK
+			single_lock_path = lockfile;
+		}
+		else if(link_result == -1 && link_errno == EEXIST) {
+			// Someone sniped us, retry
+			close(temp_fd);
+			single_instance_check_lockfile(cleanup);
+			single_instance_check_and_create_lockfile(our_sock, cleanup);
+			return;
+		}
+		else cleanup_exit(EXIT_FAILURE);
+
+		// Do not close temp_fd
+	}
+
+	sau_state::sau_state() { }
+
+	sau_state::~sau_state() {
+		remove_sigchld_pending_ops(*this);
+		cleanup();
+	}
+
+	// This function must be idempotent
+	void sau_state::cleanup() {
+		if(should_unlink_listen_sock) {
+			unlink(our_sock_name.c_str());
+			should_unlink_listen_sock = false;
+		}
+		if(!tempdir.empty()) {
+			rmdir(tempdir.c_str());
+			tempdir = "";
+		}
 		if(!single_lock_path.empty()) {
 			unlink(single_lock_path.c_str());
 			single_lock_path = "";
 		}
-	}
-
-	sau_state::sau_state(std::string agent, std::string our)
-			: agent_sock_name(std::move(agent)), our_sock_name(std::move(our)) { }
-
-	sau_state::~sau_state() {
-		remove_sigchld_pending_ops(*this);
 	}
 
 	void sau_state::addpollfd(int fd, short events, FDTYPE type) {
@@ -380,6 +403,8 @@ namespace SSHAgentUtils {
 		if(bind(sock, (struct sockaddr *) &my_addr, sizeof(my_addr)) == -1) {
 			fail();
 		}
+
+		should_unlink_listen_sock = true;
 
 		if(listen(sock, 64) == -1) {
 			fail();
@@ -471,8 +496,6 @@ namespace SSHAgentUtils {
 	}
 
 	void sau_state::poll_loop() {
-		make_listen_sock();
-
 		while(true) {
 			sigset_t mask;
 			sigemptyset(&mask);
@@ -538,8 +561,6 @@ namespace SSHAgentUtils {
 				}
 			}
 		}
-
-		unlink(our_sock_name.c_str());
 	}
 
 	void sau_state::handle_fd(int fd, short revents, bool &continue_flag) {
@@ -674,6 +695,35 @@ namespace SSHAgentUtils {
 
 	void sau_state::add_sigchld_handler(pid_t pid, std::function<void(sau_state &, pid_t, int /* wait status */)> handler) {
 		sigchld_ops.emplace_back(*this, pid, std::move(handler));
+	}
+
+	bool sau_state::set_sock_temp_dir_if(const char *dir_template, const char *agent_basename) {
+		if(our_sock_name.empty()) {
+			tempdir = string_format("%s-XXXXXX", dir_template);
+			if(!mkdtemp((char *) tempdir.c_str())) exit(EXIT_FAILURE);
+			our_sock_name = string_format("%s/%s.%d", tempdir.c_str(), agent_basename, (int) getpid());
+			return true;
+		}
+		else return false;
+	}
+
+	// This checks for an existing lockfile, but doesn't try to create one as we're not ready yet
+	// If another instance already exists, execution stops here
+	void sau_state::single_instance_precheck_if(std::string base_template) {
+		if(single_instance) {
+			single_instance_check(agent_sock_name, base_template, [&]() {
+				cleanup();
+			});
+		}
+	}
+
+	// If another instance already exists, execution stops here
+	void sau_state::single_instance_check_and_create_lockfile_if() {
+		if(single_instance) {
+			single_instance_check_and_create_lockfile(our_sock_name, [&]() {
+				cleanup();
+			});
+		}
 	}
 
 	bool keydata::operator==(const keydata &other) const {
