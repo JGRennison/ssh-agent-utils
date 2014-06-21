@@ -16,7 +16,7 @@ CPPFLAGS += -DDEBUG
 endif
 MANDIR = man1
 
-.PHONY: install all
+.PHONY: install uninstall all
 .SECONDARY:
 
 all: $(BIN)/ssh-agent-passthrough $(BIN)/ssh-agent-on-demand
@@ -45,7 +45,11 @@ clean:
 	rm -f $(OBJ)/* $(BIN)/* $(MANDIR)/*
 
 install: bin/ssh-agent-on-demand
-	cp bin/ssh-agent-on-demand /usr/local/bin/
+	install -m 755 bin/ssh-agent-on-demand /usr/local/bin/
+
+uninstall:
+	rm -f /usr/local/bin/ssh-agent-on-demand /usr/local/share/man/man1/ssh-agent-on-demand.1
+	-mandb -q
 
 HELP2MANOK := $(shell help2man --version 2>/dev/null)
 ifdef HELP2MANOK
@@ -59,7 +63,7 @@ install: install-man
 .PHONY: install-man
 
 install-man: $(MANDIR)/ssh-agent-on-demand.1
-	cp $(MANDIR)/ssh-agent-on-demand.1 /usr/local/share/man/man1/
+	install -m 644 $(MANDIR)/ssh-agent-on-demand.1 /usr/local/share/man/man1/
 	-mandb -pq
 
 else
