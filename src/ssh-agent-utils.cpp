@@ -915,7 +915,7 @@ namespace SSHAgentUtils {
 	// Note that loading a public key is blocking
 	// Returns true on success
 	bool load_pubkey_file(const std::string &filename, pubkey_file &key) {
-		int fd = open(filename.c_str(), O_RDONLY);
+		int fd = -1;
 
 		auto bad_key = [&]() -> bool {
 			// reset the key
@@ -928,6 +928,9 @@ namespace SSHAgentUtils {
 			if(fd != -1) close(fd);
 			return true;
 		};
+
+		fd = open(filename.c_str(), O_RDONLY);
+		if(fd == -1) return bad_key();
 
 		struct stat s;
 		int stat_result = fstat(fd, &s);
@@ -1049,10 +1052,12 @@ namespace SSHAgentUtils {
 	bool slurp_file(int fd, std::vector<unsigned char> &output, size_t read_hint) {
 		output.resize(0);
 		size_t real_size = 0;
+		size_t next_read_hint = 0;
 
 		if(!read_hint) read_hint = read_size;
+		else next_read_hint = 16;
 		while(true) {
-			output.resize(real_size + read_hint);
+			output.resize(real_size + read_hint + next_read_hint);
 			ssize_t result = read(fd, output.data() + real_size, read_hint);
 			if(result < 0) {
 				output.resize(real_size);
@@ -1064,7 +1069,8 @@ namespace SSHAgentUtils {
 			}
 			else {
 				real_size += result;
-				read_hint = read_size;
+				read_hint = next_read_hint ? next_read_hint : read_size;
+				next_read_hint = 0;
 			}
 		}
 	}
