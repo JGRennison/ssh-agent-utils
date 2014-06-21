@@ -20,8 +20,10 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <strings.h>
 
 #include <algorithm>
+#include <istream>
 
 #include "ssh-agent-utils.h"
 
@@ -44,6 +46,7 @@ struct on_demand_key {
 	pubkey_file key;
 	std::vector<int> client_fds;        // List of client fds we have sent an on-demand key to
 	ssh_add_options options;
+	std::string config_file_name;       // The config file name that listed this key, used when reloading a config file
 
 	on_demand_key(std::string f) : filename(f) {
 		// Start by duplicating global_options
@@ -52,6 +55,17 @@ struct on_demand_key {
 };
 
 std::vector<on_demand_key> on_demand_keys;
+
+struct config_file {
+	std::string filename;
+	time_t last_modified = 0;
+
+	config_file(std::string f) : filename(std::move(f)) { }
+	bool process();
+	void remove_keys();
+};
+
+std::vector<config_file> config_files;
 
 ssh_add_options &get_current_options() {
 	if(on_demand_keys.empty()) return global_options;
@@ -91,8 +105,11 @@ void show_usage(FILE *stream) {
 			"\n"
 			"General Options:\n"
 			"\n"
+			"-f, --config-file file\n"
+			"\tRead public key lists from file.\n"
 			"-d, --daemonise\n"
-			"\tDaemonise the process.\n"
+			"\tDaemonise the process and change directory to /.\n"
+			"\tAbsolute paths should be used for keys/config files if using this.\n"
 			"-e, --execute command [arg ...]\n"
 			"\tExecute command and arguments up to the end of the command line as a\n"
 			"\tchild process with a modified environment, and exit when it exits.\n"
@@ -120,6 +137,24 @@ void show_usage(FILE *stream) {
 			"\tShow this help.\n"
 			"-V, --version\n"
 			"\tShow version information.\n"
+			"\n"
+			"Files:\n"
+			"Config file format: Confirm and lifetime apply to the previous keyfile\n"
+			"or if at the beginning, all keyfiles in the config file.\n"
+			"\n"
+			"keyfile file\n"
+			"\tUse this key file. ~/ is expanded to $HOME/, no other expansions are\n"
+			"\tperformed.\n"
+			"confirm\n"
+			"\tEquivalent to -c. Require confirmation to sign using identities.\n"
+			"lifetime life\n"
+			"\tEquivalent to -t. Set lifetime (in seconds) when adding identities.\n"
+			"\n"
+			"Note:\n"
+			"\tIf multiple copies of the same public key are given, with different\n"
+			"\tconfirm and lifetime options it is undefined which is used.\n"
+			"\tConfig files and public key files are reloaded when their\n"
+			"\tmodifcation date changes.\n"
 	);
 }
 
@@ -132,13 +167,14 @@ static struct option options[] = {
 	{ "daemonise",       no_argument,        NULL, 'd' },
 	{ "no-recurse",      no_argument,        NULL, 'n' },
 	{ "version",         no_argument,        NULL, 'V' },
+	{ "config-file",     required_argument,  NULL, 'f' },
 	{ NULL, 0, 0, 0 }
 };
 
 void do_cmd_line(sau_state &s, int argc, char **argv) {
 	int n = 0;
 	while (n >= 0) {
-		n = getopt_long(argc, argv, "-S:s1ct:e:dnVh", options, NULL);
+		n = getopt_long(argc, argv, "-S:s1ct:e:dnf:Vh", options, NULL);
 		if (n < 0) continue;
 		switch (n) {
 		case 2:
@@ -170,6 +206,9 @@ void do_cmd_line(sau_state &s, int argc, char **argv) {
 			break;
 		case 'n':
 			s.no_recurse = true;
+			break;
+		case 'f':
+			config_files.emplace_back(optarg);
 			break;
 		case 1:
 			on_demand_keys.emplace_back(optarg);
@@ -214,6 +253,10 @@ int main(int argc, char **argv) {
 			if(!ans.parse(d, l)) {
 				// parse failed
 				return;
+			}
+
+			for(auto &c : config_files) {
+				c.process();
 			}
 
 			for(auto &k : on_demand_keys) {
@@ -356,4 +399,85 @@ int main(int argc, char **argv) {
 	s.poll_loop();
 
 	return s.exit_code;
+}
+
+bool config_file::process() {
+	int fd = -1;
+	auto failure = [&]() -> bool {
+		if(fd != -1) close(fd);
+
+#ifdef DEBUG
+		fprintf(stderr, "Parsing config file: %s, failed", filename.c_str());
+#endif
+
+		remove_keys();
+		return false;
+	};
+
+	fd = open(filename.c_str(), O_RDONLY);
+	if(fd == -1) return failure();
+
+	struct stat s;
+	int stat_result = fstat(fd, &s);
+	if(stat_result < 0) return failure();
+
+	if(last_modified != 0 && s.st_mtime == last_modified) {
+		//we have parsed this config file already, don't bother loading it again unless it's new
+		close(fd);
+		return true;
+	}
+	last_modified = s.st_mtime;
+
+	remove_keys();
+
+	std::vector<unsigned char> filedata;
+	filedata.reserve(s.st_size);
+	if(!slurp_file(fd, filedata, s.st_size)) return failure();  // read failed
+
+	// Reset "global" options
+	global_options = ssh_add_options();
+
+	uchar_vector_streambuf uvi(filedata);
+	std::istream is(&uvi);
+	for(std::string line; std::getline(is, line); ) {
+		trim(line);
+		if(line.empty()) continue;
+		if(line[0] == '#') continue;
+
+		if(strcasecmp(line.c_str(), "confirm") == 0) {
+			get_current_options().args.push_back("-c");
+			continue;
+		}
+
+		auto it = std::find_if(line.begin(), line.end(), std::ptr_fun<int, int>(std::isspace));
+		std::string token1 = std::string(line.begin(), it);
+		std::string token2 = std::string(it, line.end());
+		trim(token2);
+
+		if(strcasecmp(token1.c_str(), "lifetime") == 0) {
+			ssh_add_options &options = get_current_options();
+			options.args.push_back("-t");
+			options.args.push_back(token2);
+			continue;
+		}
+		if(strcasecmp(token1.c_str(), "keyfile") == 0) {
+			if(token2.size() >= 2 && token2.substr(0, 2) == "~/") {
+				const char *home = getenv("HOME");
+				if(home) token2 = home + token2.substr(1);
+			}
+			on_demand_keys.emplace_back(token2);
+			on_demand_keys.back().config_file_name = filename;
+			continue;
+		}
+		return failure();
+	}
+
+	close(fd);
+	return true;
+}
+
+void config_file::remove_keys() {
+	on_demand_keys.erase(std::remove_if(on_demand_keys.begin(), on_demand_keys.end(), [&](on_demand_key &k) {
+		return k.config_file_name == filename;
+	}), on_demand_keys.end());
 }

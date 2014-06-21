@@ -26,6 +26,8 @@
 #include <deque>
 #include <string>
 #include <functional>
+#include <algorithm>
+#include <streambuf>
 
 namespace SSHAgentUtils {
 
@@ -155,6 +157,32 @@ namespace SSHAgentUtils {
 	}
 
 	std::string string_format(const std::string &fmt, ...);
+
+	struct uchar_vector_streambuf : public std::streambuf {
+		uchar_vector_streambuf(const std::vector<unsigned char> &vec) {
+			this->setg((char *) vec.data(), (char *) vec.data(), (char *) vec.data() + vec.size());
+		}
+	};
+
+	// These are from http://stackoverflow.com/a/217605
+	// Author: Evan Teran
+
+	// trim from start
+	static inline std::string &ltrim(std::string &s) {
+		s.erase(s.begin(), std::find_if(s.begin(), s.end(), std::not1(std::ptr_fun<int, int>(std::isspace))));
+		return s;
+	}
+
+	// trim from end
+	static inline std::string &rtrim(std::string &s) {
+		s.erase(std::find_if(s.rbegin(), s.rend(), std::not1(std::ptr_fun<int, int>(std::isspace))).base(), s.end());
+		return s;
+	}
+
+	// trim from both ends
+	static inline std::string &trim(std::string &s) {
+		return ltrim(rtrim(s));
+	}
 };
 
 #endif
