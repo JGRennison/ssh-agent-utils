@@ -88,8 +88,8 @@ void show_usage() {
 			"\tExecute CMD [ARGS] up to the end of the command line as a child\n"
 			"\tprocess, with a modified environment and exit when it exits.\n"
 			"\tForward any SIGINT, SIGHUP and SIGTERM signals received to the child.\n"
-			"\tIf -1, --single-instance is used and another instance exists, it is\n"
-			"\texecuted directly without forking.\n"
+			"\tIf -1, --single-instance or -n, --no-recurse is used and another\n"
+			"\tinstance exists, it is executed directly without forking.\n"
 			"\tIf -d, --daemonise is used, the CMD is instead executed as the parent,\n"
 			"\tand ssh-agent-on-demand is daemonised as normal.\n"
 			"\tThe daemon is not terminated when the command exits.\n"
@@ -100,6 +100,9 @@ void show_usage() {
 			"-1, --single-instance\n"
 			"\tIf another instance which also used this switch is proxying the *same*\n"
 			"\tagent socket, print the path to its socket and exit.\n"
+			"-n, --no-recurse\n"
+			"\tIf the agent socket looks like another instance of ssh-agent-on-demand\n"
+			"\t(starts with /tmp/sshod-) print the path to its socket and exit.\n"
 			"--socket-path PATH\n"
 			"\tCreate the agent socket at PATH\n"
 			"\tDefaults to a path of the form /tmp/sshod-XXXXXX/agentod.pid\n"
@@ -113,13 +116,14 @@ static struct option options[] = {
 	{ "bourne-shell",    required_argument,  NULL, 's' },
 	{ "execute",         required_argument,  NULL, 'e' },
 	{ "daemonise",       no_argument,        NULL, 'd' },
+	{ "no-recurse",      no_argument,        NULL, 'n' },
 	{ NULL, 0, 0, 0 }
 };
 
 void do_cmd_line(sau_state &s, int argc, char **argv) {
 	int n = 0;
 	while (n >= 0) {
-		n = getopt_long(argc, argv, "-S:s1ct:e:dh", options, NULL);
+		n = getopt_long(argc, argv, "-S:s1ct:e:dnh", options, NULL);
 		if (n < 0) continue;
 		switch (n) {
 		case 2:
@@ -149,6 +153,9 @@ void do_cmd_line(sau_state &s, int argc, char **argv) {
 		case 'd':
 			s.daemonise = true;
 			break;
+		case 'n':
+			s.no_recurse = true;
+			break;
 		case 1:
 			on_demand_keys.emplace_back(optarg);
 			break;
@@ -171,7 +178,7 @@ int main(int argc, char **argv) {
 	do_cmd_line(s, argc, argv);
 
 	s.agent_sock_name = get_env_agent_sock_name_or_die();
-	s.single_instance_precheck_if("/tmp/sshod-single");
+	s.single_instance_precheck_if("/tmp/sshod-single", "/tmp/sshod");
 	s.daemonise_if();
 	s.set_sock_temp_dir_if("/tmp/sshod", "agentod");
 	s.make_listen_sock();

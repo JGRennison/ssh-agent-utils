@@ -833,17 +833,35 @@ namespace SSHAgentUtils {
 
 	// This checks for an existing lockfile, but doesn't try to create one as we're not ready yet
 	// If another instance already exists, execution stops here
-	void sau_state::single_instance_precheck_if(std::string base_template) {
+	void sau_state::single_instance_precheck_if(std::string base_template, std::string dir_template) {
+		auto already_exists = [&](std::string agent_sock, pid_t agent_pid) {
+			check_print_sock_name(STDOUT_FILENO, agent_sock, agent_pid);
+			if(exec_cmd) {
+				cleanup();
+				do_exec(agent_sock, agent_pid);
+			}
+		};
+
+		if(no_recurse && !dir_template.empty()) {
+			if(agent_sock_name.find(dir_template) == 0) {
+				int agent_pid = -1;
+				const char *agent_pid_env = getenv("SSH_AGENT_PID");
+				if(agent_pid_env) agent_pid = std::stoi(agent_pid_env);
+
+#ifdef DEBUG
+				fprintf(stderr, "No recurse: sock: %s, pid: %d, looks like another sshod\n", agent_sock_name.c_str(), agent_pid);
+#endif
+
+				already_exists(agent_sock_name, agent_pid);
+				cleanup();
+				exit(EXIT_SUCCESS);
+			}
+		}
+
 		if(single_instance) {
 			single_instance_check(agent_sock_name, base_template, [&]() {
 				cleanup();
-			}, [&](std::string agent_sock, pid_t agent_pid) {
-				check_print_sock_name(STDOUT_FILENO, agent_sock, agent_pid);
-				if(exec_cmd) {
-					cleanup();
-					do_exec(agent_sock, agent_pid);
-				}
-			});
+			}, already_exists);
 		}
 	}
 

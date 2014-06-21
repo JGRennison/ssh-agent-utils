@@ -66,6 +66,7 @@ namespace SSHAgentUtils {
 		std::string our_sock_name;
 		int our_sock_pid = -1;
 		bool single_instance = false;
+		bool no_recurse = false;
 		bool print_sock_name = false;
 		bool print_sock_bourne = false;
 		int print_sock_pipe = -1;
@@ -94,7 +95,7 @@ namespace SSHAgentUtils {
 		void set_signal_handlers();
 		void add_sigchld_handler(pid_t pid, std::function<void(sau_state &, pid_t, int /* wait status */)> handler);
 		bool set_sock_temp_dir_if(const char *dir_template, const char *agent_basename);
-		void single_instance_precheck_if(std::string base_template);
+		void single_instance_precheck_if(std::string base_template, std::string dir_template);
 		void single_instance_check_and_create_lockfile_if();
 		void check_print_sock_name(int fd, std::string sock, pid_t pid);
 
