@@ -82,6 +82,18 @@ void show_usage() {
 			"General Options:\n"
 			"-h, --help\n"
 			"\tShow this help\n"
+			"-d, --daemonise\n"
+			"\tDaemonise the process.\n"
+			"-e, --execute CMD [ARGS]\n"
+			"\tExecute CMD [ARGS] up to the end of the command line as a child\n"
+			"\tprocess, with a modified environment and exit when it exits.\n"
+			"\tForward any SIGINT, SIGHUP and SIGTERM signals received to the child.\n"
+			"\tIf -1, --single-instance is used and another instance exists, it is\n"
+			"\texecuted directly without forking.\n"
+			"\tIf -d, --daemonise is used, the CMD is instead executed as the parent,\n"
+			"\tand ssh-agent-on-demand is daemonised as normal.\n"
+			"\tThe daemon is not terminated when the command exits.\n"
+			"\tThis is only really useful if -1, --single-instance is also used.\n"
 			"-s, --bourne-shell\n"
 			"\tPrint agent socket path and pid as Bourne shell environment commands.\n"
 			"\tDefaults to printing only the agent socket path.\n"
@@ -100,13 +112,14 @@ static struct option options[] = {
 	{ "single-instance", required_argument,  NULL, '1' },
 	{ "bourne-shell",    required_argument,  NULL, 's' },
 	{ "execute",         required_argument,  NULL, 'e' },
+	{ "daemonise",       no_argument,        NULL, 'd' },
 	{ NULL, 0, 0, 0 }
 };
 
 void do_cmd_line(sau_state &s, int argc, char **argv) {
 	int n = 0;
 	while (n >= 0) {
-		n = getopt_long(argc, argv, "-S:s1ct:e:h", options, NULL);
+		n = getopt_long(argc, argv, "-S:s1ct:e:dh", options, NULL);
 		if (n < 0) continue;
 		switch (n) {
 		case 2:
@@ -133,6 +146,9 @@ void do_cmd_line(sau_state &s, int argc, char **argv) {
 			s.exec_cmd = optarg;
 			s.exec_array.insert(s.exec_array.end(), argv + optind, argv + argc);
 			return;
+		case 'd':
+			s.daemonise = true;
+			break;
 		case 1:
 			on_demand_keys.emplace_back(optarg);
 			break;
@@ -156,6 +172,7 @@ int main(int argc, char **argv) {
 
 	s.agent_sock_name = get_env_agent_sock_name_or_die();
 	s.single_instance_precheck_if("/tmp/sshod-single");
+	s.daemonise_if();
 	s.set_sock_temp_dir_if("/tmp/sshod", "agentod");
 	s.make_listen_sock();
 	s.single_instance_check_and_create_lockfile_if();

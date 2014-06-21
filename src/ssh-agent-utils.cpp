@@ -227,6 +227,26 @@ namespace SSHAgentUtils {
 		return result;
 	}
 
+	static bool slurp_parse_lockfile_fd(int fd, pid_t &agent_pid, std::string &agent_sock) {
+		std::vector<unsigned char> buffer;
+		if(!slurp_file(fd, buffer)) return false;
+
+		// This extracts the info from the lockfile, which is in rfc4251 format
+		bool ok = true;
+		const unsigned char *d = buffer.data();
+		size_t l = buffer.size();
+		agent_pid = consume_rfc4251_u32(d, l, ok);
+		agent_sock = consume_rfc4251_string(d, l, ok);
+		return ok && !l;
+	}
+
+	static bool unslurp_serialise_lockfile_fd(int fd, pid_t pid, const std::string &sock) {
+		std::vector<unsigned char> data;
+		serialise_rfc4251_u32(data, pid);
+		serialise_rfc4251_string(data, sock);
+		return unslurp_file(fd, data);
+	}
+
 	// Calls already_exists and exits if lockfile exists
 	// Just returns if lockfile does not exist
 	// Calls cleanup and exit if something went wrong
@@ -255,16 +275,9 @@ namespace SSHAgentUtils {
 			// This means that another instance is up and alive
 			// Use that, print contents of lockfile to STDOUT
 
-			std::vector<unsigned char> buffer;
-			if(!slurp_file(fd, buffer)) cleanup_exit(EXIT_FAILURE);
-
-			// This extracts the info from the lockfile, which is in rfc4251 format
-			bool ok = true;
-			const unsigned char *d = buffer.data();
-			size_t l = buffer.size();
-			pid_t agent_pid = consume_rfc4251_u32(d, l, ok);
-			std::string agent_sock = consume_rfc4251_string(d, l, ok);
-			if(!ok || l) cleanup_exit(EXIT_FAILURE);
+			pid_t agent_pid;
+			std::string agent_sock;
+			if(!slurp_parse_lockfile_fd(fd, agent_pid, agent_sock)) cleanup_exit(EXIT_FAILURE);
 
 			single_lock_already_exists_handler(agent_sock, agent_pid);
 			cleanup_exit(EXIT_SUCCESS);
@@ -308,10 +321,7 @@ namespace SSHAgentUtils {
 		if(temp_fd == -1) exit(EXIT_FAILURE);
 
 		// If we can't write to the new temp file, give up
-		std::vector<unsigned char> temp_fd_data;
-		serialise_rfc4251_u32(temp_fd_data, getpid());
-		serialise_rfc4251_string(temp_fd_data, our_sock);
-		if(!unslurp_file(temp_fd, temp_fd_data)) cleanup_exit(EXIT_FAILURE);
+		if(!unslurp_serialise_lockfile_fd(temp_fd, getpid(), our_sock)) cleanup_exit(EXIT_FAILURE);
 
 		// No-one else should have the temp file, if locking fails give up
 		if(flock(temp_fd, LOCK_EX | LOCK_NB) != 0) cleanup_exit(EXIT_FAILURE);
@@ -465,6 +475,70 @@ namespace SSHAgentUtils {
 		}
 
 		return sock;
+	}
+
+	void sau_state::daemonise_if() {
+		if(daemonise) {
+			if(exec_cmd) {
+				int pipefds[2];
+				if(pipe(pipefds) == -1) exit(EXIT_FAILURE);
+
+				int pid = fork();
+				if(pid < 0) exit(EXIT_FAILURE);
+				else if(pid == 0) {
+					// child, will become a daemon
+					close(pipefds[0]);
+					print_sock_pipe = pipefds[1];
+
+					exec_cmd = nullptr; // don't try to exec again
+				}
+				else {
+					// parent: this will be the exec'd cmd
+					close(pipefds[1]);
+
+					// Prevent the temporary child zombifying
+					wait(nullptr);
+
+					pid_t agent_pid;
+					std::string agent_sock;
+					if(!slurp_parse_lockfile_fd(pipefds[0], agent_pid, agent_sock)) exit(EXIT_FAILURE);
+					close(pipefds[0]);
+
+					do_exec(agent_sock, agent_pid);
+				}
+			}
+			int pid = fork();
+			if(pid < 0) exit(EXIT_FAILURE);
+			else if(pid == 0) {
+				// child
+				setsid();
+				if(chdir("/") == -1) exit(EXIT_FAILURE);
+				int nullfd = open("/dev/null", O_RDWR);
+				dup2(nullfd, STDOUT_FILENO);
+				dup2(nullfd, STDIN_FILENO);
+#ifndef DEBUG
+				dup2(nullfd, STDERR_FILENO);
+#endif
+				close(nullfd);
+			}
+			else {
+				// parent
+
+				// Don't want each child having their own copy of this
+				if(print_sock_pipe != -1) close(print_sock_pipe);
+				exit(EXIT_SUCCESS);
+			}
+
+			pid = fork();
+			if(pid < 0) exit(EXIT_FAILURE);
+			else if(pid > 0) {
+				// parent
+
+				// Don't want each child having their own copy of this
+				if(print_sock_pipe != -1) close(print_sock_pipe);
+				exit(EXIT_SUCCESS);
+			}
+		}
 	}
 
 	int sau_state::make_agent_sock() {
@@ -794,6 +868,11 @@ namespace SSHAgentUtils {
 				cleanup();
 				exit(EXIT_FAILURE);
 			}
+		}
+		if(print_sock_pipe != -1) {
+			if(!unslurp_serialise_lockfile_fd(print_sock_pipe, pid, sock)) exit(EXIT_FAILURE);
+			close(print_sock_pipe);
+			print_sock_pipe = -1;
 		}
 	}
 

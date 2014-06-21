@@ -68,6 +68,8 @@ namespace SSHAgentUtils {
 		bool single_instance = false;
 		bool print_sock_name = false;
 		bool print_sock_bourne = false;
+		int print_sock_pipe = -1;
+		bool daemonise = false;
 		char *exec_cmd = nullptr;
 		std::vector<char *> exec_array;
 
@@ -81,6 +83,7 @@ namespace SSHAgentUtils {
 		void delpollfd(int fd);
 		void setpollfdevents(int fd, short events);
 		int make_listen_sock();
+		void daemonise_if();
 		int make_agent_sock();
 		void write_message(int fd, const unsigned char *d, size_t l);
 		void process_message(int fd, unsigned char *data, size_t length);
@@ -94,6 +97,7 @@ namespace SSHAgentUtils {
 		void single_instance_precheck_if(std::string base_template);
 		void single_instance_check_and_create_lockfile_if();
 		void check_print_sock_name(int fd, std::string sock, pid_t pid);
+
 
 		// Caller should set this
 		std::function<void(sau_state &, FDTYPE, int, int, const unsigned char *, size_t)> msg_handler;   // src fd, other fd
