@@ -33,6 +33,7 @@
 
 #include <b64/encode.h>
 #include <b64/decode.h>
+#include <mhash.h>
 
 #include <cstring>
 #include <sstream>
@@ -291,10 +292,22 @@ namespace SSHAgentUtils {
 	// Calls already_exists and exits if lockfile exists
 	// Just returns if lockfile does not exist
 	// Calls cleanup and exit if something went wrong
-	void single_instance_check(const std::string &agent_env, std::string base_template, std::function<void()> cleanup, std::function<void(std::string, pid_t)> already_exists) {
-		base64::encoder b64e;
-		std::istringstream ins(agent_env);
+	void single_instance_check(const std::vector<unsigned char> &single_instance_opt_str, std::string base_template, std::function<void()> cleanup, std::function<void(std::string, pid_t)> already_exists) {
+		unsigned char hash[16];
+
+		MHASH td = mhash_init(MHASH_MD5);
+		if(td == MHASH_FAILED) {
+			cleanup();
+			exit(EXIT_FAILURE);
+		}
+
+		mhash(td, single_instance_opt_str.data(), single_instance_opt_str.size());
+		mhash_deinit(td, hash);
+
+		generic_streambuf_wrapper<unsigned char> hash_stream(hash, hash + 16);
+		std::istream ins(&hash_stream);
 		std::ostringstream ss;
+		base64::encoder b64e;
 		b64e.encode(ins, ss);
 
 		lockfile = base_template + "-";
@@ -859,10 +872,15 @@ namespace SSHAgentUtils {
 		}
 
 		if(single_instance) {
-			single_instance_check(agent_sock_name, base_template, [&]() {
+			serialise_rfc4251_string(single_instance_opt_str, agent_sock_name);
+			single_instance_check(single_instance_opt_str, base_template, [&]() {
 				cleanup();
 			}, already_exists);
 		}
+	}
+
+	void sau_state::single_instance_add_checked_option(const std::string &str) {
+		serialise_rfc4251_string(single_instance_opt_str, str);
 	}
 
 	// If another instance already exists, execution stops here

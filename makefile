@@ -2,7 +2,7 @@ CXXFLAGS ?= -Wall -Wextra -Wno-unused-parameter -O3
 LDFLAGS ?=
 CPPFLAGS += -D_FILE_OFFSET_BITS=64
 CXXFLAGS += -std=c++11
-LDLIBS = -lb64
+LDLIBS = -lb64 -lmhash
 
 ifndef debug
 BIN = bin

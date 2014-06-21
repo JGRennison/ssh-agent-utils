@@ -68,6 +68,7 @@ namespace SSHAgentUtils {
 		std::string our_sock_name;
 		int our_sock_pid = -1;
 		bool single_instance = false;
+		std::vector<unsigned char> single_instance_opt_str;
 		bool no_recurse = false;
 		bool print_sock_name = false;
 		bool print_sock_bourne = false;
@@ -99,6 +100,7 @@ namespace SSHAgentUtils {
 		bool set_sock_temp_dir_if(const char *dir_template, const char *agent_basename);
 		void single_instance_precheck_if(std::string base_template, std::string dir_template);
 		void single_instance_check_and_create_lockfile_if();
+		void single_instance_add_checked_option(const std::string &str);
 		void check_print_sock_name(int fd, std::string sock, pid_t pid);
 
 
@@ -161,6 +163,12 @@ namespace SSHAgentUtils {
 	struct uchar_vector_streambuf : public std::streambuf {
 		uchar_vector_streambuf(const std::vector<unsigned char> &vec) {
 			this->setg((char *) vec.data(), (char *) vec.data(), (char *) vec.data() + vec.size());
+		}
+	};
+
+	template <typename C> struct generic_streambuf_wrapper : public std::streambuf {
+		generic_streambuf_wrapper(C *start, C *end) {
+			this->setg(reinterpret_cast<char*>(start), reinterpret_cast<char*>(start), reinterpret_cast<char*>(end));
 		}
 	};
 

@@ -125,8 +125,9 @@ void show_usage(FILE *stream) {
 			"\tPrint agent socket path and pid as Bourne shell environment commands,\n"
 			"\tlike ssh-agent does. Defaults to printing only the agent socket path.\n"
 			"-1, --single-instance\n"
-			"\tIf another instance which also used this switch is proxying the *same*\n"
-			"\tagent socket, print/use the path to its socket and exit.\n"
+			"\tIf another instance which also used this switch is proxying the same\n"
+			"\tagent socket *and* uses the same key file and config file arguments,\n"
+			"\tprint/use the path to its socket and exit.\n"
 			"-n, --no-recurse\n"
 			"\tIf the agent socket looks like another instance of ssh-agent-on-demand\n"
 			"\t(starts with /tmp/sshod-) print/use the path to its socket and exit.\n"
@@ -188,11 +189,14 @@ void do_cmd_line(sau_state &s, int argc, char **argv) {
 			break;
 		case 'c':
 			get_current_options().args.push_back("-c");
+			s.single_instance_add_checked_option("-c");
 			break;
 		case 't': {
 			ssh_add_options &options = get_current_options();
 			options.args.push_back("-t");
 			options.args.push_back(optarg);
+			s.single_instance_add_checked_option("-t");
+			s.single_instance_add_checked_option(optarg);
 			break;
 		}
 		case 'e':
@@ -209,9 +213,12 @@ void do_cmd_line(sau_state &s, int argc, char **argv) {
 			break;
 		case 'f':
 			config_files.emplace_back(optarg);
+			s.single_instance_add_checked_option("-f");
+			s.single_instance_add_checked_option(optarg);
 			break;
 		case 1:
 			on_demand_keys.emplace_back(optarg);
+			s.single_instance_add_checked_option(optarg);
 			break;
 		case 'V':
 			fprintf(stdout, "%s\n\n%s\n", version_string, authors);
