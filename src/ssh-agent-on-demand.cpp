@@ -21,6 +21,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <strings.h>
+#include <limits.h>
+#include <stdlib.h>
 
 #include <algorithm>
 #include <istream>
@@ -40,6 +42,7 @@ struct ssh_add_options {
 };
 
 ssh_add_options global_options;
+bool fixup_comments = false;
 
 struct on_demand_key {
 	std::string filename;
@@ -55,6 +58,7 @@ struct on_demand_key {
 };
 
 std::vector<on_demand_key> on_demand_keys;
+std::vector<on_demand_key> auxiliary_keys; // For comment fixup
 
 struct config_file {
 	std::string filename;
@@ -124,6 +128,11 @@ void show_usage(FILE *stream) {
 			"-s, --bourne-shell\n"
 			"\tPrint agent socket path and pid as Bourne shell environment commands,\n"
 			"\tlike ssh-agent does. Defaults to printing only the agent socket path.\n"
+			"-F, --comment-fixup\n"
+			"\tAdds the comment string from the public key file to the comment string\n"
+			"\tfor keys that the agent already has, if that comment is the file name\n"
+			"\tof the private key. This adds '.pub' to the comment and tries to load\n"
+			"\tthe public key if it is within $HOME/.ssh/.\n"
 			"-1, --single-instance\n"
 			"\tIf another instance which also used this switch is proxying the same\n"
 			"\tagent socket *and* uses the same key file and config file arguments,\n"
@@ -169,13 +178,14 @@ static struct option options[] = {
 	{ "no-recurse",      no_argument,        NULL, 'n' },
 	{ "version",         no_argument,        NULL, 'V' },
 	{ "config-file",     required_argument,  NULL, 'f' },
+	{ "comment-fixup",   no_argument,        NULL, 'F' },
 	{ NULL, 0, 0, 0 }
 };
 
 void do_cmd_line(sau_state &s, int argc, char **argv) {
 	int n = 0;
 	while (n >= 0) {
-		n = getopt_long(argc, argv, "-S:s1ct:e:dnf:Vh", options, NULL);
+		n = getopt_long(argc, argv, "-s1ct:e:dnf:FVh", options, NULL);
 		if (n < 0) continue;
 		switch (n) {
 		case 2:
@@ -215,6 +225,9 @@ void do_cmd_line(sau_state &s, int argc, char **argv) {
 			config_files.emplace_back(optarg);
 			s.single_instance_add_checked_option("-f");
 			s.single_instance_add_checked_option(optarg);
+			break;
+		case 'F':
+			fixup_comments = true;
 			break;
 		case 1:
 			on_demand_keys.emplace_back(optarg);
@@ -266,6 +279,8 @@ int main(int argc, char **argv) {
 				c.process();
 			}
 
+			size_t existing_keys_size = ans.keys.size();
+
 			for(auto &k : on_demand_keys) {
 				// If this client fd is already listed, remove it
 				k.client_fds.erase(std::remove(k.client_fds.begin(), k.client_fds.end(), other_fd), k.client_fds.end());
@@ -289,6 +304,58 @@ int main(int argc, char **argv) {
 					}
 				}
 			}
+
+			if(fixup_comments) {
+				for(auto it = ans.keys.begin(); it != ans.keys.begin() + existing_keys_size; ++it) {
+					auto &k = *it;
+					// See if we can fix up the comment field, assumes that old comment is a file name
+
+					std::string pub_filename = k.comment + ".pub";
+					char real_pub_filename[PATH_MAX];
+					if(realpath(pub_filename.c_str(), real_pub_filename) == nullptr) continue; // Bad filename
+					pub_filename = real_pub_filename;
+
+					const char *home_c = getenv("HOME");
+					if(!home_c) continue; // HOME could have been removed from env
+					std::string home = home_c;
+
+					if(!home.empty() && pub_filename.find(home + "/.ssh/") == 0) {
+						// Comment looks like a respectable filename
+
+						on_demand_key *found_match = nullptr;
+
+						auto try_keys = [&](std::vector<on_demand_key> &keys) {
+							if(found_match) return;
+
+							for(auto &tk : keys) {
+								if(tk.filename == pub_filename) {
+									// found one
+									found_match = &tk;
+									return;
+								}
+							}
+						};
+						try_keys(on_demand_keys);
+						try_keys(auxiliary_keys);
+
+						if(!found_match) {
+							// No joy with keys we already have
+							on_demand_key odk(pub_filename);
+							if(load_pubkey_file(odk.filename, odk.key)) {
+								// Key loads OK, save it in auxiliary list
+								auxiliary_keys.emplace_back(std::move(odk));
+								found_match = &(auxiliary_keys.back());
+							}
+						}
+
+						// Check that actual key data matches
+						if(found_match && found_match->key == k) {
+							k.comment += " (" + found_match->key.comment + ")";
+						}
+					}
+				}
+			}
+
 			std::vector<unsigned char> out;
 			ans.serialise(out);
 			ss.write_message(other_fd, out.data(), out.size());
