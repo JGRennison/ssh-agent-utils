@@ -25,6 +25,12 @@
 
 #include "ssh-agent-utils.h"
 
+#ifndef VERSION_STRING
+#define VERSION_STRING __DATE__ " " __TIME__
+#endif
+const char version_string[] = "ssh-agent-on-demand " VERSION_STRING;
+const char authors[] = "Written by Jonathan G. Rennison <j.g.rennison@gmail.com>";
+
 using namespace SSHAgentUtils;
 
 struct ssh_add_options {
@@ -62,50 +68,58 @@ std::vector<ssh_add_operation> ssh_add_ops;
 
 void single_instance_check(const std::string &agent_env);
 
-void show_usage() {
-	fprintf(stderr,
+void show_usage(FILE *stream) {
+	fprintf(stream,
 			"Usage: ssh-agent-on-demand [options] [pubkeyfiles]\n"
 			"\tAn SSH agent proxy which adds public keys to the list of agent keys.\n"
 			"\tIf a client requests that the agent sign with an added key, the\n"
-			"\tcorresponding private key is added on-demand using ssh-add.\n"
-			"\tThe path to the listener socket is printed to STDOUT.\n"
+			"\tcorresponding private key (by removing any .pub extension) is added\n"
+			"\ton-demand using ssh-add. The path to the listener socket is printed\n"
+			"\tto STDOUT, unless -e, --execute is used.\n"
 			"\n"
-			"Options which refer to the previous public key on the command line\n"
-			"If specified at the beginning, these apply to all keys on the command line\n"
+			"Options:\n"
+			"\n"
+			"Options which refer to the previous public key on the command line.\n"
+			"If specified at the beginning, these apply to all keys on the command line:\n"
+			"\n"
 			"-c\n"
-			"\tPassed verbatim to ssh-add\n"
-			"\tRequire confirmation to sign using identities\n"
+			"\tPassed verbatim to ssh-add.\n"
+			"\tRequire confirmation to sign using identities.\n"
 			"-t life\n"
-			"\tPassed verbatim to ssh-add\n"
-			"\tSet lifetime (in seconds) when adding identities\n"
+			"\tPassed verbatim to ssh-add.\n"
+			"\tSet lifetime (in seconds) when adding identities.\n"
 			"\n"
 			"General Options:\n"
-			"-h, --help\n"
-			"\tShow this help\n"
+			"\n"
 			"-d, --daemonise\n"
 			"\tDaemonise the process.\n"
-			"-e, --execute CMD [ARGS]\n"
-			"\tExecute CMD [ARGS] up to the end of the command line as a child\n"
-			"\tprocess, with a modified environment and exit when it exits.\n"
+			"-e, --execute command [arg ...]\n"
+			"\tExecute command and arguments up to the end of the command line as a\n"
+			"\tchild process with a modified environment, and exit when it exits.\n"
 			"\tForward any SIGINT, SIGHUP and SIGTERM signals received to the child.\n"
+			"\tSuppress printing of agent socket details on STDOUT.\n"
 			"\tIf -1, --single-instance or -n, --no-recurse is used and another\n"
 			"\tinstance exists, it is executed directly without forking.\n"
-			"\tIf -d, --daemonise is used, the CMD is instead executed as the parent,\n"
-			"\tand ssh-agent-on-demand is daemonised as normal.\n"
-			"\tThe daemon is not terminated when the command exits.\n"
-			"\tThis is only really useful if -1, --single-instance is also used.\n"
+			"\tIf -d, --daemonise is used, the command is instead executed as the\n"
+			"\tparent, and ssh-agent-on-demand is daemonised as normal.\n"
+			"\tThe daemon is not terminated when the command exits. Using with -d,\n"
+			"\t--daemonise is mainly useful if -1, --single-instance is also used.\n"
 			"-s, --bourne-shell\n"
-			"\tPrint agent socket path and pid as Bourne shell environment commands.\n"
-			"\tDefaults to printing only the agent socket path.\n"
+			"\tPrint agent socket path and pid as Bourne shell environment commands,\n"
+			"\tlike ssh-agent does. Defaults to printing only the agent socket path.\n"
 			"-1, --single-instance\n"
 			"\tIf another instance which also used this switch is proxying the *same*\n"
-			"\tagent socket, print the path to its socket and exit.\n"
+			"\tagent socket, print/use the path to its socket and exit.\n"
 			"-n, --no-recurse\n"
 			"\tIf the agent socket looks like another instance of ssh-agent-on-demand\n"
-			"\t(starts with /tmp/sshod-) print the path to its socket and exit.\n"
-			"--socket-path PATH\n"
-			"\tCreate the agent socket at PATH\n"
-			"\tDefaults to a path of the form /tmp/sshod-XXXXXX/agentod.pid\n"
+			"\t(starts with /tmp/sshod-) print/use the path to its socket and exit.\n"
+			"--socket-path sock_path\n"
+			"\tCreate the agent socket at sock_path.\n"
+			"\tDefaults to a path of the form /tmp/sshod-XXXXXX/agentod.pid.\n"
+			"-h, --help\n"
+			"\tShow this help.\n"
+			"-V, --version\n"
+			"\tShow version information.\n"
 	);
 }
 
@@ -117,13 +131,14 @@ static struct option options[] = {
 	{ "execute",         required_argument,  NULL, 'e' },
 	{ "daemonise",       no_argument,        NULL, 'd' },
 	{ "no-recurse",      no_argument,        NULL, 'n' },
+	{ "version",         no_argument,        NULL, 'V' },
 	{ NULL, 0, 0, 0 }
 };
 
 void do_cmd_line(sau_state &s, int argc, char **argv) {
 	int n = 0;
 	while (n >= 0) {
-		n = getopt_long(argc, argv, "-S:s1ct:e:dnh", options, NULL);
+		n = getopt_long(argc, argv, "-S:s1ct:e:dnVh", options, NULL);
 		if (n < 0) continue;
 		switch (n) {
 		case 2:
@@ -159,10 +174,15 @@ void do_cmd_line(sau_state &s, int argc, char **argv) {
 		case 1:
 			on_demand_keys.emplace_back(optarg);
 			break;
-		case '?':
+		case 'V':
+			fprintf(stdout, "%s\n\n%s\n", version_string, authors);
+			exit(EXIT_SUCCESS);
 		case 'h':
-			show_usage();
-			exit(1);
+			show_usage(stdout);
+			exit(EXIT_SUCCESS);
+		case '?':
+			show_usage(stderr);
+			exit(EXIT_FAILURE);
 		}
 	}
 
