@@ -23,6 +23,7 @@
 #include <strings.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <algorithm>
 #include <istream>
@@ -43,6 +44,7 @@ struct ssh_add_options {
 
 ssh_add_options global_options;
 bool fixup_comments = false;
+std::vector<char *> saved_argv;
 
 struct on_demand_key {
 	std::string filename;
@@ -182,7 +184,7 @@ static struct option options[] = {
 	{ NULL, 0, 0, 0 }
 };
 
-void do_cmd_line(sau_state &s, int argc, char **argv) {
+void do_cmd_line(sau_state &s, int &argc, char **argv) {
 	int n = 0;
 	while (n >= 0) {
 		n = getopt_long(argc, argv, "-s1ct:e:dnf:FVh", options, NULL);
@@ -214,6 +216,19 @@ void do_cmd_line(sau_state &s, int argc, char **argv) {
 			s.print_sock_name = false;
 			s.exec_cmd = optarg;
 			s.exec_array.insert(s.exec_array.end(), argv + optind, argv + argc);
+
+			if(s.daemonise) {
+				// We don't really want the daemon to have the exec commands first used when it was launched cluttering up the ps listing
+				// Trim argv at the -e point
+				for(int i = optind - 2; i < argc; i++) {
+					if(argv[i]) {
+						int len = strlen(argv[i]);
+						memset(argv[i], 0, len);
+						argv[i] = 0;
+					}
+				}
+				argc = optind - 2;
+			}
 			return;
 		case 'd':
 			s.daemonise = true;

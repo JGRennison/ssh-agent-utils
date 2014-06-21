@@ -471,7 +471,7 @@ namespace SSHAgentUtils {
 
 		check_print_sock_name(STDOUT_FILENO, our_sock_name, our_sock_pid);
 
-		if(exec_cmd) {
+		if(!exec_cmd.empty()) {
 			int pid = fork();
 			if(pid < 0) exit(EXIT_FAILURE);
 			else if(pid == 0) do_exec(our_sock_name, our_sock_pid);
@@ -492,7 +492,7 @@ namespace SSHAgentUtils {
 
 	void sau_state::daemonise_if() {
 		if(daemonise) {
-			if(exec_cmd) {
+			if(!exec_cmd.empty()) {
 				int pipefds[2];
 				if(pipe(pipefds) == -1) exit(EXIT_FAILURE);
 
@@ -503,7 +503,7 @@ namespace SSHAgentUtils {
 					close(pipefds[0]);
 					print_sock_pipe = pipefds[1];
 
-					exec_cmd = nullptr; // don't try to exec again
+					exec_cmd = ""; // don't try to exec again
 				}
 				else {
 					// parent: this will be the exec'd cmd
@@ -849,7 +849,7 @@ namespace SSHAgentUtils {
 	void sau_state::single_instance_precheck_if(std::string base_template, std::string dir_template) {
 		auto already_exists = [&](std::string agent_sock, pid_t agent_pid) {
 			check_print_sock_name(STDOUT_FILENO, agent_sock, agent_pid);
-			if(exec_cmd) {
+			if(!exec_cmd.empty()) {
 				cleanup();
 				do_exec(agent_sock, agent_pid);
 			}
@@ -918,11 +918,13 @@ namespace SSHAgentUtils {
 		putenv((char *) authenv.c_str());
 		putenv((char *) pidenv.c_str());
 
-		exec_array.push_back(0);
-		exec_array.insert(exec_array.begin(), exec_cmd);
-		execvp(exec_cmd, exec_array.data());
+		std::vector<char *> exec_argv;
+		exec_argv.push_back((char *) exec_cmd.c_str());
+		for(auto &it : exec_array) exec_argv.push_back((char *) it.c_str());
+		exec_argv.push_back(nullptr);
+		execvp(exec_cmd.c_str(), exec_argv.data());
 
-		fprintf(stderr, "execvp '%s' failed: %m\n", exec_cmd);
+		fprintf(stderr, "execvp '%s' failed: %m\n", exec_cmd.c_str());
 		exit(EXIT_FAILURE);
 	}
 

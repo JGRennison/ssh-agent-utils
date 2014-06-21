@@ -74,8 +74,8 @@ namespace SSHAgentUtils {
 		bool print_sock_bourne = false;
 		int print_sock_pipe = -1;
 		bool daemonise = false;
-		char *exec_cmd = nullptr;
-		std::vector<char *> exec_array;
+		std::string exec_cmd;
+		std::vector<std::string> exec_array;
 
 		int exit_code = 0;
 
