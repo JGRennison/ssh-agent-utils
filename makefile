@@ -4,6 +4,8 @@ CPPFLAGS += -D_FILE_OFFSET_BITS=64
 CXXFLAGS += -std=c++11
 LDLIBS = -lb64 -lmhash
 
+OBJCOPY = objcopy
+
 ifndef debug
 BIN = bin
 OBJ = obj
@@ -26,11 +28,17 @@ ifdef VERSION_STRING
 CVFLAGS := -DVERSION_STRING='"${VERSION_STRING}"'
 endif
 
+$(BIN)/ssh-agent-on-demand: $(OBJ)/ssh-agent-on-demand_help.o
+
 $(BIN)/%: $(OBJ)/%.o $(OBJ)/ssh-agent-utils.o | $(BIN)
-	$(CXX) -o $@ $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) $< $(OBJ)/ssh-agent-utils.o $(LOADLIBES) $(LDLIBS)
+	$(CXX) -o $@ $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) $^ $(LOADLIBES) $(LDLIBS)
 
 $(OBJ)/%.o: src/%.cpp src/ssh-agent-utils.h | $(OBJ)
 	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) $(CVFLAGS) $< -o $@
+
+$(OBJ)/%_help.o: %_help.txt | $(OBJ)
+	$(LD) -r -b binary $< -o $@
+	-$(OBJCOPY) --rename-section .data=.rodata,alloc,load,readonly,data,contents $@ $@
 
 $(BIN):
 	mkdir $(BIN)

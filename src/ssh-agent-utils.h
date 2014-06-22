@@ -29,6 +29,13 @@
 #include <algorithm>
 #include <streambuf>
 
+#define OBJ_EXTERN(obj) \
+	extern "C" char extern_##obj##_start[] asm("_binary_" #obj "_start"); \
+	extern "C" char extern_##obj##_end[] asm("_binary_" #obj "_end");
+
+#define EXTERN_STRING(obj) \
+	std::string( extern_##obj##_start , extern_##obj##_end )
+
 namespace SSHAgentUtils {
 
 	enum class FDTYPE {

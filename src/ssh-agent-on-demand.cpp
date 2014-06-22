@@ -36,6 +36,8 @@
 const char version_string[] = "ssh-agent-on-demand " VERSION_STRING;
 const char authors[] = "Written by Jonathan G. Rennison <j.g.rennison@gmail.com>";
 
+OBJ_EXTERN(ssh_agent_on_demand_help_txt);
+
 using namespace SSHAgentUtils;
 
 struct ssh_add_options {
@@ -89,85 +91,7 @@ std::vector<ssh_add_operation> ssh_add_ops;
 void single_instance_check(const std::string &agent_env);
 
 void show_usage(FILE *stream) {
-	fprintf(stream,
-			"Usage: ssh-agent-on-demand [options] [pubkeyfiles]\n"
-			"\tAn SSH agent proxy which adds public keys to the list of agent keys.\n"
-			"\tIf a client requests that the agent sign with an added key, the\n"
-			"\tcorresponding private key (by removing any .pub extension) is added\n"
-			"\ton-demand using ssh-add. The path to the listener socket is printed\n"
-			"\tto STDOUT, unless -e, --execute is used.\n"
-			"\n"
-			"Options:\n"
-			"\n"
-			"Options which refer to the previous public key on the command line.\n"
-			"If specified at the beginning, these apply to all keys on the command line:\n"
-			"\n"
-			"-c\n"
-			"\tPassed verbatim to ssh-add.\n"
-			"\tRequire confirmation to sign using identities.\n"
-			"-t life\n"
-			"\tPassed verbatim to ssh-add.\n"
-			"\tSet lifetime (in seconds) when adding identities.\n"
-			"\n"
-			"General Options:\n"
-			"\n"
-			"-f, --config-file file\n"
-			"\tRead public key lists from file.\n"
-			"-d, --daemonise\n"
-			"\tDaemonise the process and change directory to /.\n"
-			"\tAbsolute paths should be used for keys/config files if using this.\n"
-			"-e, --execute command [arg ...]\n"
-			"\tExecute command and arguments up to the end of the command line as a\n"
-			"\tchild process with a modified environment, and exit when it exits.\n"
-			"\tForward any SIGINT, SIGHUP and SIGTERM signals received to the child.\n"
-			"\tSuppress printing of agent socket details on STDOUT.\n"
-			"\tIf -1, --single-instance or -n, --no-recurse is used and another\n"
-			"\tinstance exists, it is executed directly without forking.\n"
-			"\tIf -d, --daemonise is used, the command is instead executed as the\n"
-			"\tparent, and ssh-agent-on-demand is daemonised as normal.\n"
-			"\tThe daemon is not terminated when the command exits. Using with -d,\n"
-			"\t--daemonise is mainly useful if -1, --single-instance is also used.\n"
-			"-s, --bourne-shell\n"
-			"\tPrint agent socket path and pid as Bourne shell environment commands,\n"
-			"\tlike ssh-agent does. Defaults to printing only the agent socket path.\n"
-			"-F, --comment-fixup\n"
-			"\tAdds the comment string from the public key file to the comment string\n"
-			"\tfor keys that the agent already has, if that comment is the file name\n"
-			"\tof the private key. This adds '.pub' to the comment and tries to load\n"
-			"\tthe public key if it is within $HOME/.ssh/.\n"
-			"-1, --single-instance\n"
-			"\tIf another instance which also used this switch is proxying the same\n"
-			"\tagent socket *and* uses the same key file and config file arguments,\n"
-			"\tprint/use the path to its socket and exit.\n"
-			"-n, --no-recurse\n"
-			"\tIf the agent socket looks like another instance of ssh-agent-on-demand\n"
-			"\t(starts with /tmp/sshod-) print/use the path to its socket and exit.\n"
-			"--socket-path sock_path\n"
-			"\tCreate the agent socket at sock_path.\n"
-			"\tDefaults to a path of the form /tmp/sshod-XXXXXX/agentod.pid.\n"
-			"-h, --help\n"
-			"\tShow this help.\n"
-			"-V, --version\n"
-			"\tShow version information.\n"
-			"\n"
-			"Files:\n"
-			"Config file format: Confirm and lifetime apply to the previous keyfile\n"
-			"or if at the beginning, all keyfiles in the config file.\n"
-			"\n"
-			"keyfile file\n"
-			"\tUse this key file. ~/ is expanded to $HOME/, no other expansions are\n"
-			"\tperformed.\n"
-			"confirm\n"
-			"\tEquivalent to -c. Require confirmation to sign using identities.\n"
-			"lifetime life\n"
-			"\tEquivalent to -t. Set lifetime (in seconds) when adding identities.\n"
-			"\n"
-			"Note:\n"
-			"\tIf multiple copies of the same public key are given, with different\n"
-			"\tconfirm and lifetime options it is undefined which is used.\n"
-			"\tConfig files and public key files are reloaded when their\n"
-			"\tmodifcation date changes.\n"
-	);
+	fprintf(stream,	"%s", EXTERN_STRING(ssh_agent_on_demand_help_txt).c_str());
 }
 
 static struct option options[] = {

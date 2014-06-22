@@ -1,0 +1,77 @@
+Usage: ssh-agent-on-demand [options] [pubkeyfiles]
+	An SSH agent proxy which adds public keys to the list of agent keys.
+	If a client requests that the agent sign with an added key, the
+	corresponding private key (by removing any .pub extension) is added
+	on-demand using ssh-add. The path to the listener socket is printed
+	to STDOUT, unless -e, --execute is used.
+
+Options:
+
+Options which refer to the previous public key on the command line.
+If specified at the beginning, these apply to all keys on the command line:
+
+-c
+	Passed verbatim to ssh-add.
+	Require confirmation to sign using identities.
+-t life
+	Passed verbatim to ssh-add.
+	Set lifetime (in seconds) when adding identities.
+
+General Options:
+
+-f, --config-file file
+	Read public key lists from file.
+-d, --daemonise
+	Daemonise the process and change directory to /.
+	Absolute paths should be used for keys/config files if using this.
+-e, --execute command [arg ...]
+	Execute command and arguments up to the end of the command line as a
+	child process with a modified environment, and exit when it exits.
+	Forward any SIGINT, SIGHUP and SIGTERM signals received to the child.
+	Suppress printing of agent socket details on STDOUT.
+	If -1, --single-instance or -n, --no-recurse is used and another
+	instance exists, it is executed directly without forking.
+	If -d, --daemonise is used, the command is instead executed as the
+	parent, and ssh-agent-on-demand is daemonised as normal.
+	The daemon is not terminated when the command exits. Using with -d,
+	--daemonise is mainly useful if -1, --single-instance is also used.
+-s, --bourne-shell
+	Print agent socket path and pid as Bourne shell environment commands,
+	like ssh-agent does. Defaults to printing only the agent socket path.
+-F, --comment-fixup
+	Adds the comment string from the public key file to the comment string
+	for keys that the agent already has, if that comment is the file name
+	of the private key. This adds '.pub' to the comment and tries to load
+	the public key if it is within $HOME/.ssh/.
+-1, --single-instance
+	If another instance which also used this switch is proxying the same
+	agent socket *and* uses the same key file and config file arguments,
+	print/use the path to its socket and exit.
+-n, --no-recurse
+	If the agent socket looks like another instance of ssh-agent-on-demand
+	(starts with /tmp/sshod-) print/use the path to its socket and exit.
+--socket-path sock_path
+	Create the agent socket at sock_path.
+	Defaults to a path of the form /tmp/sshod-XXXXXX/agentod.pid.
+-h, --help
+	Show this help.
+-V, --version
+	Show version information.
+
+Files:
+Config file format: Confirm and lifetime apply to the previous keyfile
+or if at the beginning, all keyfiles in the config file.
+
+keyfile file
+	Use this key file. ~/ is expanded to $HOME/, no other expansions are
+	performed.
+confirm
+	Equivalent to -c. Require confirmation to sign using identities.
+lifetime life
+	Equivalent to -t. Set lifetime (in seconds) when adding identities.
+
+Note:
+	If multiple copies of the same public key are given, with different
+	confirm and lifetime options it is undefined which is used.
+	Config files and public key files are reloaded when their
+	modifcation date changes.
