@@ -26,15 +26,6 @@
 #include <deque>
 #include <string>
 #include <functional>
-#include <algorithm>
-#include <streambuf>
-
-#define OBJ_EXTERN(obj) \
-	extern "C" char extern_##obj##_start[] asm("_binary_" #obj "_start"); \
-	extern "C" char extern_##obj##_end[] asm("_binary_" #obj "_end");
-
-#define EXTERN_STRING(obj) \
-	std::string( extern_##obj##_start , extern_##obj##_end )
 
 namespace SSHAgentUtils {
 
@@ -44,11 +35,6 @@ namespace SSHAgentUtils {
 		CLIENT,
 		LISTENER,
 	};
-
-	void setnonblock(int fd, bool setcloexec = true);
-
-	std::string get_env_agent_sock_name();
-	std::string get_env_agent_sock_name_or_die();
 
 	class sau_state {
 		struct fdinfo {
@@ -154,50 +140,6 @@ namespace SSHAgentUtils {
 		bool parse(const unsigned char *d, size_t l);
 	};
 
-	bool slurp_file(int fd, std::vector<unsigned char> &output, size_t read_hint = 0);
-	bool unslurp_file(int fd, const unsigned char *data, size_t size);
-
-	inline bool unslurp_file(int fd, const std::vector<unsigned char> &buffer) {
-		return unslurp_file(fd, buffer.data(), buffer.size());
-	}
-
-	inline bool unslurp_file(int fd, const std::string &buffer) {
-		return unslurp_file(fd, (unsigned char *) buffer.data(), buffer.size());
-	}
-
-	std::string string_format(const std::string &fmt, ...);
-
-	struct uchar_vector_streambuf : public std::streambuf {
-		uchar_vector_streambuf(const std::vector<unsigned char> &vec) {
-			this->setg((char *) vec.data(), (char *) vec.data(), (char *) vec.data() + vec.size());
-		}
-	};
-
-	template <typename C> struct generic_streambuf_wrapper : public std::streambuf {
-		generic_streambuf_wrapper(C *start, C *end) {
-			this->setg(reinterpret_cast<char*>(start), reinterpret_cast<char*>(start), reinterpret_cast<char*>(end));
-		}
-	};
-
-	// These are from http://stackoverflow.com/a/217605
-	// Author: Evan Teran
-
-	// trim from start
-	static inline std::string &ltrim(std::string &s) {
-		s.erase(s.begin(), std::find_if(s.begin(), s.end(), std::not1(std::ptr_fun<int, int>(std::isspace))));
-		return s;
-	}
-
-	// trim from end
-	static inline std::string &rtrim(std::string &s) {
-		s.erase(std::find_if(s.rbegin(), s.rend(), std::not1(std::ptr_fun<int, int>(std::isspace))).base(), s.end());
-		return s;
-	}
-
-	// trim from both ends
-	static inline std::string &trim(std::string &s) {
-		return ltrim(rtrim(s));
-	}
 };
 
 #endif

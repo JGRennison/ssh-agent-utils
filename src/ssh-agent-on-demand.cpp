@@ -29,6 +29,7 @@
 #include <istream>
 
 #include "ssh-agent-utils.h"
+#include "utils.h"
 
 #ifndef VERSION_STRING
 #define VERSION_STRING __DATE__ " " __TIME__

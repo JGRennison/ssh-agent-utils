@@ -28,13 +28,17 @@ ifdef VERSION_STRING
 CVFLAGS := -DVERSION_STRING='"${VERSION_STRING}"'
 endif
 
+-include $(OBJ)/*.d
+
+MAKEDEPS = -MMD -MP -MT '$@ $(patsubst %.o,%.d,$@)'
+
 $(BIN)/ssh-agent-on-demand: $(OBJ)/ssh-agent-on-demand_help.o
 
-$(BIN)/%: $(OBJ)/%.o $(OBJ)/ssh-agent-utils.o | $(BIN)
+$(BIN)/%: $(OBJ)/%.o $(OBJ)/ssh-agent-utils.o $(OBJ)/utils.o | $(BIN)
 	$(CXX) -o $@ $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) $^ $(LOADLIBES) $(LDLIBS)
 
-$(OBJ)/%.o: src/%.cpp src/ssh-agent-utils.h | $(OBJ)
-	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) $(CVFLAGS) $< -o $@
+$(OBJ)/%.o: src/%.cpp | $(OBJ)
+	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) $(CVFLAGS) $(MAKEDEPS) $< -o $@
 
 $(OBJ)/%_help.o: %_help.txt | $(OBJ)
 	$(LD) -r -b binary $< -o $@

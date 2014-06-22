@@ -17,6 +17,7 @@
 //==========================================================================
 
 #include "ssh-agent-utils.h"
+#include "utils.h"
 
 using namespace SSHAgentUtils;
 
