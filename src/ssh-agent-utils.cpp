@@ -193,6 +193,7 @@ namespace SSHAgentUtils {
 
 		lockfile = base_template + "-";
 		std::string b64 = ss.str();
+		std::replace(b64.begin(), b64.end(), '/', '_'); // Replace slashes with underscores, slashes are bad news for filenames...
 		std::remove_copy(b64.begin(), b64.end(), std::back_inserter(lockfile), '\n'); // Append the base64 representation of the real agent sock, minus any annoying newlines
 
 		single_lock_cleanup_handler = std::move(cleanup);
