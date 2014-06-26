@@ -114,7 +114,10 @@ namespace SSHAgentUtils {
 		if(!agent_sock_str || *agent_sock_str == 0) {
 			return "";
 		}
-		else return std::string(agent_sock_str);
+		if(access(agent_sock_str, R_OK | W_OK) != 0) {
+			fprintf(stderr, "Warning: SSH_AUTH_SOCK: '%s', appears to be invalid\n", agent_sock_str);
+		}
+		return std::string(agent_sock_str);
 	}
 
 	std::string get_env_agent_sock_name_or_die() {
