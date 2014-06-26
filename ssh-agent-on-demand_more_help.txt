@@ -1,0 +1,31 @@
+Files:
+Config file format: Confirm and lifetime apply to the previous keyfile
+or if at the beginning, all keyfiles in the config file.
+
+keyfile file
+	Use this key file. ~/ is expanded to $HOME/, no other expansions are
+	performed.
+confirm
+	Equivalent to -c. Require confirmation to sign using identities.
+lifetime life
+	Equivalent to -t. Set lifetime (in seconds) when adding identities.
+
+Note:
+	If multiple copies of the same public key are given with different
+	confirm and lifetime options it is undefined which is used.
+	Config files and public key files are reloaded if their
+	modification date has changed when a client requests a key list.
+
+Examples:
+eval `bin/ssh-agent-on-demand -1sdFn -f ~/.ssh/your_config_file`
+	Sets the ssh-agent for the current shell to ssh-agent-on-demand.
+	Avoids creating a duplicate if a suitable on-demand agent is already
+	running.
+alias ssh='ssh-agent-on-demand -1dF -f ~/.ssh/your_config_file -e ssh'
+	Alias ssh to use ssh-agent-on-demand.
+ssh-agent-on-demand ~/.ssh/your_key_file.pub -t "10m" -c -e ssh your_host
+	Run ssh with an additional on-demand key, which if added will
+	have a 10 minute lifetime and require conformation on each use.
+
+See also:
+	ssh-agent(1), ssh-add(1), ssh-agent-filter(1)

@@ -32,7 +32,7 @@ endif
 
 MAKEDEPS = -MMD -MP -MT '$@ $(patsubst %.o,%.d,$@)'
 
-$(BIN)/ssh-agent-on-demand: $(OBJ)/ssh-agent-on-demand_help.o
+$(BIN)/ssh-agent-on-demand: $(OBJ)/ssh-agent-on-demand_help.o $(OBJ)/ssh-agent-on-demand_more_help.o
 
 $(BIN)/%: $(OBJ)/%.o $(OBJ)/ssh-agent-utils.o $(OBJ)/utils.o | $(BIN)
 	$(CXX) -o $@ $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) $^ $(LOADLIBES) $(LDLIBS)
@@ -68,7 +68,7 @@ ifdef HELP2MANOK
 all: $(MANDIR)/ssh-agent-on-demand.1
 
 $(MANDIR)/ssh-agent-on-demand.1: $(BIN)/ssh-agent-on-demand | $(MANDIR)
-	help2man -s 1 -N $(BIN)/ssh-agent-on-demand -n "SSH-Agent On Demand" -o $(MANDIR)/ssh-agent-on-demand.1
+	help2man -h --help-long -s 1 -N $(BIN)/ssh-agent-on-demand -n "SSH-Agent On Demand" -o $(MANDIR)/ssh-agent-on-demand.1
 
 install: install-man
 

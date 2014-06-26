@@ -38,6 +38,7 @@ const char version_string[] = "ssh-agent-on-demand " VERSION_STRING;
 const char authors[] = "Written by Jonathan G. Rennison <j.g.rennison@gmail.com>";
 
 OBJ_EXTERN(ssh_agent_on_demand_help_txt);
+OBJ_EXTERN(ssh_agent_on_demand_more_help_txt);
 
 using namespace SSHAgentUtils;
 
@@ -95,8 +96,13 @@ void show_usage(FILE *stream) {
 	fprintf(stream,	"%s", EXTERN_STRING(ssh_agent_on_demand_help_txt).c_str());
 }
 
+void show_long_usage(FILE *stream) {
+	fprintf(stream,	"%s\n%s", EXTERN_STRING(ssh_agent_on_demand_help_txt).c_str(), EXTERN_STRING(ssh_agent_on_demand_more_help_txt).c_str());
+}
+
 static struct option options[] = {
 	{ "help",            no_argument,        NULL, 'h' },
+	{ "help-long",       no_argument,        NULL, 'H' },
 	{ "socket-path",     required_argument,  NULL,  2  },
 	{ "single-instance", required_argument,  NULL, '1' },
 	{ "bourne-shell",    required_argument,  NULL, 's' },
@@ -112,7 +118,7 @@ static struct option options[] = {
 void do_cmd_line(sau_state &s, int &argc, char **argv) {
 	int n = 0;
 	while (n >= 0) {
-		n = getopt_long(argc, argv, "-s1ct:e:dnf:FVh", options, NULL);
+		n = getopt_long(argc, argv, "-s1ct:e:dnf:FVhH", options, NULL);
 		if (n < 0) continue;
 		switch (n) {
 		case 2:
@@ -178,6 +184,9 @@ void do_cmd_line(sau_state &s, int &argc, char **argv) {
 			exit(EXIT_SUCCESS);
 		case 'h':
 			show_usage(stdout);
+			exit(EXIT_SUCCESS);
+		case 'H':
+			show_long_usage(stdout);
 			exit(EXIT_SUCCESS);
 		case '?':
 			show_usage(stderr);

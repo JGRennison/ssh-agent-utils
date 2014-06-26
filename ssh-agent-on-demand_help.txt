@@ -54,24 +54,8 @@ General Options:
 	Create the agent socket at sock_path.
 	Defaults to a path of the form /tmp/sshod-XXXXXX/agentod.pid.
 -h, --help
-	Show this help.
+	Show short help info.
+-H, --help-long
+	Show long help info.
 -V, --version
 	Show version information.
-
-Files:
-Config file format: Confirm and lifetime apply to the previous keyfile
-or if at the beginning, all keyfiles in the config file.
-
-keyfile file
-	Use this key file. ~/ is expanded to $HOME/, no other expansions are
-	performed.
-confirm
-	Equivalent to -c. Require confirmation to sign using identities.
-lifetime life
-	Equivalent to -t. Set lifetime (in seconds) when adding identities.
-
-Note:
-	If multiple copies of the same public key are given, with different
-	confirm and lifetime options it is undefined which is used.
-	Config files and public key files are reloaded when their
-	modifcation date changes.
