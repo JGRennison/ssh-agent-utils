@@ -383,7 +383,7 @@ namespace SSHAgentUtils {
 				else if(pid == 0) {
 					// child, will become a daemon
 					close(pipefds[0]);
-					print_sock_pipe = pipefds[1];
+					print_sock_pipes.push_back(pipefds[1]);
 
 					exec_cmd = ""; // don't try to exec again
 				}
@@ -402,10 +402,21 @@ namespace SSHAgentUtils {
 					do_exec(agent_sock, agent_pid);
 				}
 			}
+
+			// This is so that the original process can print the socket details once the daemon has set up
+			int read_sock_name_pipe = -1;
+			if(print_sock_name) {
+				int pipefds[2];
+				if(pipe(pipefds) == -1) exit(EXIT_FAILURE);
+				read_sock_name_pipe = pipefds[0];
+				print_sock_pipes.push_back(pipefds[1]);
+			}
+
 			int pid = fork();
 			if(pid < 0) exit(EXIT_FAILURE);
 			else if(pid == 0) {
-				// child
+				// child, half-way to becoming a daemon
+
 				setsid();
 				if(chdir("/") == -1) exit(EXIT_FAILURE);
 				int nullfd = open("/dev/null", O_RDWR);
@@ -415,24 +426,36 @@ namespace SSHAgentUtils {
 				dup2(nullfd, STDERR_FILENO);
 #endif
 				close(nullfd);
+
+				if(read_sock_name_pipe != -1) close(read_sock_name_pipe);
+				print_sock_name = false;
 			}
 			else {
-				// parent
+				// parent, will terminate
 
-				// Don't want each child having their own copy of this
-				if(print_sock_pipe != -1) close(print_sock_pipe);
+				for(int fd : print_sock_pipes) {
+					close(fd);
+				}
+				print_sock_pipes.clear();
+
+				// Print socket details if pipe exists
+				if(read_sock_name_pipe != -1) {
+					pid_t agent_pid;
+					std::string agent_sock;
+					if(!slurp_parse_lockfile_fd(read_sock_name_pipe, agent_pid, agent_sock)) exit(EXIT_FAILURE);
+					check_print_sock_name(STDOUT_FILENO, agent_sock, agent_pid);
+				}
+
 				exit(EXIT_SUCCESS);
 			}
 
 			pid = fork();
 			if(pid < 0) exit(EXIT_FAILURE);
 			else if(pid > 0) {
-				// parent
-
-				// Don't want each child having their own copy of this
-				if(print_sock_pipe != -1) close(print_sock_pipe);
+				// parent, will terminate
 				exit(EXIT_SUCCESS);
 			}
+			// child is now a daemon
 		}
 	}
 
@@ -787,11 +810,11 @@ namespace SSHAgentUtils {
 				exit(EXIT_FAILURE);
 			}
 		}
-		if(print_sock_pipe != -1) {
-			if(!unslurp_serialise_lockfile_fd(print_sock_pipe, pid, sock)) exit(EXIT_FAILURE);
-			close(print_sock_pipe);
-			print_sock_pipe = -1;
+		for(int fd : print_sock_pipes) {
+			if(!unslurp_serialise_lockfile_fd(fd, pid, sock)) exit(EXIT_FAILURE);
+			close(fd);
 		}
+		print_sock_pipes.clear();
 	}
 
 	void sau_state::do_exec(std::string sock, pid_t pid) {

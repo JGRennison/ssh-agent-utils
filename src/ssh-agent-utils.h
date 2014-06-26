@@ -65,7 +65,7 @@ namespace SSHAgentUtils {
 		bool no_recurse = false;
 		bool print_sock_name = false;
 		bool print_sock_bourne = false;
-		int print_sock_pipe = -1;
+		std::vector<int> print_sock_pipes;
 		bool daemonise = false;
 		std::string exec_cmd;
 		std::vector<std::string> exec_array;
