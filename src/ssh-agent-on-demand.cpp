@@ -31,14 +31,9 @@
 #include "ssh-agent-utils.h"
 #include "utils.h"
 
-#ifndef VERSION_STRING
-#define VERSION_STRING __DATE__ " " __TIME__
-#endif
-const char version_string[] = "ssh-agent-on-demand " VERSION_STRING;
-const char authors[] = "Written by Jonathan G. Rennison <j.g.rennison@gmail.com>";
-
 OBJ_EXTERN(ssh_agent_on_demand_help_txt);
 OBJ_EXTERN(ssh_agent_on_demand_more_help_txt);
+OBJ_EXTERN(version_ssh_agent_on_demand_version_txt);
 
 using namespace SSHAgentUtils;
 
@@ -180,7 +175,7 @@ void do_cmd_line(sau_state &s, int &argc, char **argv) {
 			s.single_instance_add_checked_option(optarg);
 			break;
 		case 'V':
-			fprintf(stdout, "%s\n\n%s\n", version_string, authors);
+			fprintf(stdout, "%s", EXTERN_STRING(version_ssh_agent_on_demand_version_txt).c_str());
 			exit(EXIT_SUCCESS);
 		case 'h':
 			show_usage(stdout);
