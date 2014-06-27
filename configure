@@ -1,0 +1,61 @@
+#!/bin/bash
+
+# This script does not actually configure anything, it just checks to see whether dependencies
+# which are often not present are installed
+
+CXX=g++
+CXXFLAGS="-std=c++11"
+
+APT_PKGS=()
+RETCODE=0
+
+${CXX} ${CXXFLAGS} -o /dev/null -x c++ - -lb64 2> /dev/null << EOL
+#include <b64/encode.h>
+#include <b64/decode.h>
+
+int main() {
+	base64::encoder b64e;
+	base64::decoder b64d;
+	return 0;
+}
+EOL
+
+if [ $? -ne 0 ]; then
+	echo "Error: libb64 is missing"
+	APT_PKGS+=("libb64-dev")
+	RETCODE=1
+fi
+
+${CXX} ${CXXFLAGS} -o /dev/null -x c++ - -lmhash 2> /dev/null << EOL
+#include <mhash.h>
+
+int main() {
+	mhash_init(MHASH_MD5);
+	return 0;
+}
+EOL
+
+if [ $? -ne 0 ]; then
+	echo "Error: mhash is missing"
+	APT_PKGS+=("libmhash-dev")
+	RETCODE=1
+fi
+
+${CXX} ${CXXFLAGS} -o /dev/null -x c++ - 2> /dev/null << EOL
+#include <poll.h>
+
+int main() {
+	return ppoll(0, 0, 0, 0);
+}
+EOL
+
+if [ $? -ne 0 ]; then
+	echo "Error: ppoll() is missing"
+	RETCODE=1
+fi
+
+if [ ${#APT_PKGS[@]} -ne 0 ] && which "apt-get" > /dev/null 2> /dev/null; then
+	echo "Try: \`apt-get install ${APT_PKGS[*]}\`"
+fi
+
+exit $RETCODE
