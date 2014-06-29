@@ -1,8 +1,18 @@
+# Install directories
+PREFIX = /usr/local
+EPREFIX = $(PREFIX)
+INSTALL_BINDIR = $(EPREFIX)/bin
+DATAROOTDIR = $(PREFIX)/share
+INSTALL_MANDIR = $(DATAROOTDIR)/man
+# end
+
+-include makefile.local
+
 CXXFLAGS ?= -Wall -Wextra -Wno-unused-parameter -O3
 LDFLAGS ?=
 CPPFLAGS += -D_FILE_OFFSET_BITS=64
 CXXFLAGS += -std=c++11
-LDLIBS = -lb64 -lmhash
+LDLIBS += -lb64 -lmhash
 
 OBJCOPY = objcopy
 
@@ -18,8 +28,6 @@ CPPFLAGS += -DDEBUG
 endif
 MANDIR = man1
 VERDIR = version
-
--include makefile.local
 
 .PHONY: install uninstall all
 .SECONDARY:
@@ -64,10 +72,10 @@ clean:
 	rm -f -d $(BUILDDIRS)
 
 install: bin/ssh-agent-on-demand
-	install -m 755 bin/ssh-agent-on-demand /usr/local/bin/
+	install -m 755 bin/ssh-agent-on-demand $(INSTALL_BINDIR)/
 
 uninstall:
-	rm -f /usr/local/bin/ssh-agent-on-demand /usr/local/share/man/man1/ssh-agent-on-demand.1
+	rm -f $(INSTALL_BINDIR)/ssh-agent-on-demand $(INSTALL_MANDIR)/man1/ssh-agent-on-demand.1
 	-mandb -q
 
 HELP2MANOK := $(shell help2man --version 2>/dev/null)
@@ -85,7 +93,7 @@ install: install-man
 .PHONY: install-man
 
 install-man: $(MANDIR)/ssh-agent-on-demand.1
-	install -m 644 $(MANDIR)/ssh-agent-on-demand.1 /usr/local/share/man/man1/
+	install -m 644 $(MANDIR)/ssh-agent-on-demand.1 $(INSTALL_MANDIR)/man1/
 	-mandb -pq
 
 else

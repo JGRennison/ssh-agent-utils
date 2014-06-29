@@ -1,7 +1,5 @@
-bin/
-obj/
-bin_debug/
-obj_debug/
+bin*/
+obj*/
 man1/
 version/
 makefile.local
