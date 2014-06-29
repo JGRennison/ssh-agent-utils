@@ -46,7 +46,6 @@ https://github.com/JGRennison/ssh-agent-utils
 ### Build dependencies
 * libb64  
 * libmhash  
-* A system with ppoll()  
 
 ### Building
 Should build out of the box with `./configure`, `make` and `make install`.  

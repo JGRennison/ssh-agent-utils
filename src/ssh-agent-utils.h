@@ -34,6 +34,9 @@ namespace SSHAgentUtils {
 		AGENT,
 		CLIENT,
 		LISTENER,
+#ifdef PPOLL_MISSING
+		SIGDUMMY,
+#endif
 	};
 
 	class sau_state {

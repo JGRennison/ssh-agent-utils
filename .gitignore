@@ -4,3 +4,4 @@ bin_debug/
 obj_debug/
 man1/
 version/
+makefile.local

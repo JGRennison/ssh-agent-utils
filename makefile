@@ -19,6 +19,8 @@ endif
 MANDIR = man1
 VERDIR = version
 
+-include makefile.local
+
 .PHONY: install uninstall all
 .SECONDARY:
 

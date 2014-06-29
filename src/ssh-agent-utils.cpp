@@ -45,6 +45,17 @@ namespace SSHAgentUtils {
 	bool force_exit = false;
 	int signal_forward_pid_instead = 0;
 
+#ifdef PPOLL_MISSING
+	int sig_write_pipe_fd = -1;
+#endif
+
+	void sighandler_end() {
+#ifdef PPOLL_MISSING
+		char foo = 0;
+		write(sig_write_pipe_fd, &foo, 1);
+#endif
+	}
+
 	void sighandler(int sig) {
 		if(signal_forward_pid_instead) {
 			kill(signal_forward_pid_instead, sig);
@@ -52,6 +63,7 @@ namespace SSHAgentUtils {
 		else {
 			force_exit = true;
 		}
+		sighandler_end();
 	}
 
 	struct sigchld_pending_op {
@@ -76,7 +88,7 @@ namespace SSHAgentUtils {
 		while(true) {
 			int status;
 			pid_t pid = waitpid(-1, &status, WNOHANG);
-			if(pid <= 0) return;
+			if(pid <= 0) break;
 
 #ifdef DEBUG
 			fprintf(stderr, "sigchld_handler called for pid: %d, result: 0x%X\n", pid, status);
@@ -100,6 +112,7 @@ namespace SSHAgentUtils {
 				if(handler) handler(*ss, pid, status);
 			}
 		}
+		sighandler_end();
 	}
 
 	// Remove all SIGCHLD pending ops which use a given sau_state, this is to stop the sau_state being used after it is finished/destructed
@@ -541,7 +554,16 @@ namespace SSHAgentUtils {
 		while(true) {
 			sigset_t mask;
 			sigemptyset(&mask);
+
+#ifdef PPOLL_MISSING
+			sigset_t origmask;
+			sigprocmask(SIG_SETMASK, &mask, &origmask);
+			int n = poll(pollfds.data(), pollfds.size(), -1);
+			sigprocmask(SIG_SETMASK, &origmask, nullptr);
+#else
 			int n = ppoll(pollfds.data(), pollfds.size(), nullptr, &mask);
+#endif
+
 			if(force_exit) {
 #ifdef DEBUG
 				fprintf(stderr, "Signal handler set force_exit\n");
@@ -561,6 +583,13 @@ namespace SSHAgentUtils {
 				switch(fdinfos[fd].type) {
 					case FDTYPE::NONE:
 						exit(EXIT_FAILURE);
+#ifdef PPOLL_MISSING
+					case FDTYPE::SIGDUMMY: {
+						char buffer[16];
+						read(fd, buffer, sizeof(buffer));
+						break;
+					}
+#endif
 					case FDTYPE::LISTENER: {
 						int newsock = accept(fd, 0, 0);
 						if(newsock == -1) {
@@ -733,6 +762,15 @@ namespace SSHAgentUtils {
 		sigaction(SIGCHLD, &new_action, 0);
 		new_action.sa_handler = SIG_IGN;
 		sigaction(SIGPIPE, &new_action, 0);
+
+#ifdef PPOLL_MISSING
+		int pipes[2];
+		if(pipe(pipes) != 0) exit(EXIT_FAILURE);
+		setnonblock(pipes[0]);
+		setnonblock(pipes[1]);
+		sig_write_pipe_fd = pipes[1];
+		addpollfd(pipes[0], POLLIN, FDTYPE::SIGDUMMY);
+#endif
 	}
 
 	void sau_state::add_sigchld_handler(pid_t pid, std::function<void(sau_state &, pid_t, int /* wait status */)> handler) {
