@@ -72,7 +72,7 @@ clean:
 	rm -f -d $(BUILDDIRS)
 
 install: bin/ssh-agent-on-demand
-	install -m 755 bin/ssh-agent-on-demand $(INSTALL_BINDIR)/
+	install -D -m 755 bin/ssh-agent-on-demand $(INSTALL_BINDIR)/ssh-agent-on-demand
 
 uninstall:
 	rm -f $(INSTALL_BINDIR)/ssh-agent-on-demand $(INSTALL_MANDIR)/man1/ssh-agent-on-demand.1
@@ -93,7 +93,7 @@ install: install-man
 .PHONY: install-man
 
 install-man: $(MANDIR)/ssh-agent-on-demand.1
-	install -m 644 $(MANDIR)/ssh-agent-on-demand.1 $(INSTALL_MANDIR)/man1/
+	install -D -m 644 $(MANDIR)/ssh-agent-on-demand.1 $(INSTALL_MANDIR)/man1/ssh-agent-on-demand.1
 	-mandb -pq
 
 else
