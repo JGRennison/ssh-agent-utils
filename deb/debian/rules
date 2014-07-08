@@ -1,0 +1,9 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@ --parallel
+
+override_dh_auto_configure:
+	dh_auto_configure -- INSTALLTARG=install-ssh-agent-on-demand DEFAULTTARG=ssh-agent-on-demand
+
+override_dh_install:

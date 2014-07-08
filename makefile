@@ -1,10 +1,14 @@
 # Install directories
-PREFIX = /usr/local
-EPREFIX = $(PREFIX)
-INSTALL_BINDIR = $(EPREFIX)/bin
-DATAROOTDIR = $(PREFIX)/share
-INSTALL_MANDIR = $(DATAROOTDIR)/man
+prefix = /usr/local
+exec_prefix = $(prefix)
+bindir = $(exec_prefix)/bin
+datarootdir = $(prefix)/share
+mandir = $(datarootdir)/man
+man1dir = $(mandir)/man1
 # end
+
+DEFAULTTARG = all
+INSTALLTARG = install-all
 
 -include makefile.local
 
@@ -26,19 +30,28 @@ CXXFLAGS += -g
 LDFLAGS += -g
 CPPFLAGS += -DDEBUG
 endif
-MANDIR = man1
-VERDIR = version
+MAN1 = man1
+VER = ver
 
-.PHONY: install uninstall all
+$(DEFAULTTARG):
+install: $(INSTALLTARG)
+
+.PHONY: install install-all uninstall all dumpversion
+.PHONY: ssh-agent-on-demand install-ssh-agent-on-demand uninstall-ssh-agent-on-demand
 .SECONDARY:
 
-all: $(BIN)/ssh-agent-passthrough $(BIN)/ssh-agent-on-demand
+all: $(BIN)/ssh-agent-passthrough ssh-agent-on-demand
 
-VERSION_STRING := $(shell git describe --always --dirty=-m 2>/dev/null || date "+%F %T %z" 2>/dev/null || echo "Unknown version")
+VERSION_STRING := $(shell cat version 2>/dev/null || git describe --tags --always --dirty=-m 2>/dev/null || date "+%F %T %z" 2>/dev/null || echo "Unknown version")
+
+dumpversion:
+	@echo $(VERSION_STRING)
 
 -include $(OBJ)/*.d
 
 MAKEDEPS = -MMD -MP -MT '$@ $(patsubst %.o,%.d,$@)'
+
+ssh-agent-on-demand: $(BIN)/ssh-agent-on-demand
 
 $(BIN)/ssh-agent-on-demand: $(OBJ)/ssh-agent-on-demand_help.o $(OBJ)/ssh-agent-on-demand_more_help.o $(OBJ)/ssh-agent-on-demand_version.o
 
@@ -52,16 +65,16 @@ $(OBJ)/%_help.o: %_help.txt | $(OBJ)
 	$(LD) -r -b binary $< -o $@
 	-$(OBJCOPY) --rename-section .data=.rodata,alloc,load,readonly,data,contents $@ $@
 
-$(OBJ)/%_version.o: $(VERDIR)/%_version.txt | $(OBJ)
+$(OBJ)/%_version.o: $(VER)/%_version.txt | $(OBJ)
 	$(LD) -r -b binary $< -o $@
 	-$(OBJCOPY) --rename-section .data=.rodata,alloc,load,readonly,data,contents $@ $@
 
-$(VERDIR)/%_version.txt: src/*.cpp src/*.h *_help.txt authors.txt makefile | $(VERDIR) # Rebuild version string whenever any source changes
+$(VER)/%_version.txt: src/*.cpp src/*.h *_help.txt authors.txt makefile | $(VER) # Rebuild version string whenever any source changes
 	echo '$* $(VERSION_STRING)' > $@
 	echo '' >> $@
 	cat authors.txt >> $@
 
-BUILDDIRS := $(BIN) $(OBJ) $(MANDIR) $(VERDIR)
+BUILDDIRS := $(BIN) $(OBJ) $(MAN1) $(VER)
 
 $(BUILDDIRS):
 	mkdir $@
@@ -71,29 +84,33 @@ clean:
 	rm -f $(addsuffix /*,$(BUILDDIRS))
 	rm -f -d $(BUILDDIRS)
 
-install: bin/ssh-agent-on-demand
-	install -D -m 755 bin/ssh-agent-on-demand $(INSTALL_BINDIR)/ssh-agent-on-demand
+install-all: install-ssh-agent-on-demand
 
-uninstall:
-	rm -f $(INSTALL_BINDIR)/ssh-agent-on-demand $(INSTALL_MANDIR)/man1/ssh-agent-on-demand.1
+install-ssh-agent-on-demand: $(BIN)/ssh-agent-on-demand
+	install -D -m 755 $(BIN)/ssh-agent-on-demand $(DESTDIR)$(bindir)/ssh-agent-on-demand
+
+uninstall: uninstall-ssh-agent-on-demand
+
+uninstall-ssh-agent-on-demand:
+	rm -f $(DESTDIR)$(bindir)/ssh-agent-on-demand $(DESTDIR)$(man1dir)/ssh-agent-on-demand.1
 	-mandb -q
 
 HELP2MANOK := $(shell help2man --version 2>/dev/null)
 ifdef HELP2MANOK
-all: $(MANDIR)/ssh-agent-on-demand.1
+ssh-agent-on-demand: $(MAN1)/ssh-agent-on-demand.1
 
-$(MANDIR)/ssh-agent-on-demand.1.txt: ssh-agent-on-demand_help.txt ssh-agent-on-demand_more_help.txt | $(MANDIR)
+$(MAN1)/ssh-agent-on-demand.1.txt: ssh-agent-on-demand_help.txt ssh-agent-on-demand_more_help.txt | $(MAN1)
 	sed -s -e '$$G' $^ > $@
 
-$(MANDIR)/ssh-agent-on-demand.1: $(MANDIR)/ssh-agent-on-demand.1.txt $(VERDIR)/ssh-agent-on-demand_version.txt | $(MANDIR)
-	help2man -s 1 -N cat -h $(MANDIR)/ssh-agent-on-demand.1.txt -v $(VERDIR)/ssh-agent-on-demand_version.txt -n "SSH-Agent On Demand" -o $(MANDIR)/ssh-agent-on-demand.1
+$(MAN1)/ssh-agent-on-demand.1: $(MAN1)/ssh-agent-on-demand.1.txt $(VER)/ssh-agent-on-demand_version.txt | $(MAN1)
+	help2man -s 1 -N cat -h $(MAN1)/ssh-agent-on-demand.1.txt -v $(VER)/ssh-agent-on-demand_version.txt -n "SSH-Agent On Demand" -o $(MAN1)/ssh-agent-on-demand.1
 
-install: install-man
+install-ssh-agent-on-demand: install-ssh-agent-on-demand-man
 
-.PHONY: install-man
+.PHONY: install-ssh-agent-on-demand-man
 
-install-man: $(MANDIR)/ssh-agent-on-demand.1
-	install -D -m 644 $(MANDIR)/ssh-agent-on-demand.1 $(INSTALL_MANDIR)/man1/ssh-agent-on-demand.1
+install-ssh-agent-on-demand-man: $(MAN1)/ssh-agent-on-demand.1
+	install -D -m 644 $(MAN1)/ssh-agent-on-demand.1 $(DESTDIR)$(man1dir)/ssh-agent-on-demand.1
 	-mandb -pq
 
 else

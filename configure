@@ -13,11 +13,11 @@ LDLIBS=
 ENVVARS=()
 
 OPTIONS=(
-	"--prefix=PREFIX/PREFIX/install architecture-independent files in PREFIX"
-	"--exec-prefix=EPREFIX/EPREFIX/install architecture-dependent files in EPREFIX"
-	"--bindir=DIR/INSTALL_BINDIR/user executables"
-	"--datarootdir=DIR/DATAROOTDIR/read-only architecture-independent data root"
-	"--mandir=DIR/INSTALL_MANDIR/man documentation"
+	"--prefix=PREFIX/prefix/install architecture-independent files in PREFIX"
+	"--exec-prefix=EPREFIX/exec_prefix/install architecture-dependent files in EPREFIX"
+	"--bindir=DIR/bindir/user executables"
+	"--datarootdir=DIR/datarootdir/read-only architecture-independent data root"
+	"--mandir=DIR/mandir/man documentation"
 )
 
 function do_option() {

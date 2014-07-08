@@ -33,7 +33,7 @@
 
 OBJ_EXTERN(ssh_agent_on_demand_help_txt);
 OBJ_EXTERN(ssh_agent_on_demand_more_help_txt);
-OBJ_EXTERN(version_ssh_agent_on_demand_version_txt);
+OBJ_EXTERN(ver_ssh_agent_on_demand_version_txt);
 
 using namespace SSHAgentUtils;
 
@@ -175,7 +175,7 @@ void do_cmd_line(sau_state &s, int &argc, char **argv) {
 			s.single_instance_add_checked_option(optarg);
 			break;
 		case 'V':
-			fprintf(stdout, "%s", EXTERN_STRING(version_ssh_agent_on_demand_version_txt).c_str());
+			fprintf(stdout, "%s", EXTERN_STRING(ver_ssh_agent_on_demand_version_txt).c_str());
 			exit(EXIT_SUCCESS);
 		case 'h':
 			show_usage(stdout);

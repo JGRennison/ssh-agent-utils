@@ -40,8 +40,8 @@ Instead of:
 This is a trivial transparent proxy stub which proxies all communications without change.
 
 ### URLs
-This project is currently hosted at:  
-https://github.com/JGRennison/ssh-agent-utils
+* This project is hosted at: https://github.com/JGRennison/ssh-agent-utils
+* A Ubuntu PPA is currently available at https://launchpad.net/~j-g-rennison/+archive/ssh-agent-utils
 
 ### Build dependencies
 * libb64  
