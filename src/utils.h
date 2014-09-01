@@ -66,6 +66,7 @@ namespace SSHAgentUtils {
 	}
 
 	std::string get_env_agent_sock_name();
+	void check_agent_sock_name_or_die(const std::string &sock);
 	std::string get_env_agent_sock_name_or_die();
 
 

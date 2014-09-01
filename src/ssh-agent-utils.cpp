@@ -861,6 +861,10 @@ namespace SSHAgentUtils {
 		putenv((char *) authenv.c_str());
 		putenv((char *) pidenv.c_str());
 
+		do_exec_no_env();
+	}
+
+	void sau_state::do_exec_no_env() {
 		std::vector<char *> exec_argv;
 		exec_argv.push_back((char *) exec_cmd.c_str());
 		for(auto &it : exec_array) exec_argv.push_back((char *) it.c_str());

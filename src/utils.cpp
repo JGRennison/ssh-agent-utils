@@ -122,11 +122,15 @@ namespace SSHAgentUtils {
 
 	std::string get_env_agent_sock_name_or_die() {
 		std::string result = get_env_agent_sock_name();
-		if(result.empty()) {
+		check_agent_sock_name_or_die(result);
+		return result;
+	}
+
+	void check_agent_sock_name_or_die(const std::string &sock) {
+		if(sock.empty()) {
 			fprintf(stderr, "No SSH_AUTH_SOCK environment variable\n");
 			exit(EXIT_FAILURE);
 		}
-		return result;
 	}
 
 	bool slurp_file(int fd, std::vector<unsigned char> &output, size_t read_hint) {

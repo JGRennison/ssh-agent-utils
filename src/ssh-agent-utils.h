@@ -57,8 +57,6 @@ namespace SSHAgentUtils {
 		std::string tempdir;
 		bool should_unlink_listen_sock = false;
 
-		void do_exec(std::string sock, pid_t pid);
-
 	public:
 		std::string agent_sock_name;
 		std::string our_sock_name;
@@ -98,7 +96,8 @@ namespace SSHAgentUtils {
 		void single_instance_check_and_create_lockfile_if();
 		void single_instance_add_checked_option(const std::string &str);
 		void check_print_sock_name(int fd, std::string sock, pid_t pid);
-
+		void do_exec(std::string sock, pid_t pid);
+		void do_exec_no_env();
 
 		// Caller should set this
 		std::function<void(sau_state &, FDTYPE, int, int, const unsigned char *, size_t)> msg_handler;   // src fd, other fd

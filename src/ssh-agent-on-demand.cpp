@@ -200,7 +200,14 @@ int main(int argc, char **argv) {
 
 	do_cmd_line(s, argc, argv);
 
-	s.agent_sock_name = get_env_agent_sock_name_or_die();
+	s.agent_sock_name = get_env_agent_sock_name();
+
+	if(s.agent_sock_name.empty() && !s.exec_cmd.empty()) {
+		fprintf(stderr, "No SSH_AUTH_SOCK environment variable: executing without proxying\n");
+		s.do_exec_no_env();
+	}
+
+	check_agent_sock_name_or_die(s.agent_sock_name);
 	s.single_instance_precheck_if("/tmp/sshod-single", "/tmp/sshod");
 	s.daemonise_if();
 	s.set_sock_temp_dir_if("/tmp/sshod", "agentod");
